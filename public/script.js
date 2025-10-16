@@ -1,9 +1,9 @@
 //
 // script.js
 //
-// Enhanced client-side logic for the MCP Diagnosis UI. Supports loading
-// an mcp.json configuration, running batch diagnostics, visualising
-// handshake details and testing individual tools exposed by each server.
+// Client-side logic for the MCP Diagnosis UI. Supports manual diagnoses,
+// loading mcp.json files, visualising handshake details, listing tool
+// arguments (when declared) and testing tools through a modal interface.
 
 (() => {
   const form = document.getElementById('diagnose-form');
@@ -12,12 +12,22 @@
   const stdioRow = document.getElementById('stdio-row');
   const serversList = document.getElementById('servers-list');
   const template = document.getElementById('server-template');
+
   const loadConfigButton = document.getElementById('load-config-btn');
   const configFileInput = document.getElementById('config-file-input');
   const configFileNameLabel = document.getElementById('config-file-name');
 
+  const modalBackdrop = document.getElementById('modal-backdrop');
+  const toolModal = document.getElementById('tool-modal');
+  const toolModalBody = document.getElementById('tool-modal-body');
+  const toolModalTitle = document.getElementById('tool-modal-title');
+  const toolModalSubmit = document.getElementById('tool-modal-submit');
+  const toolModalClose = document.getElementById('tool-modal-close');
+
   const servers = [];
   let isLoadingConfig = false;
+  let activeToolContext = null;
+  let previousBodyOverflow = '';
 
   function escapeHtml(value) {
     if (value === null || value === undefined) return '';
@@ -33,18 +43,9 @@
     return escapeHtml(value);
   }
 
-  function updateFormVisibility() {
-    if (modeSelect.value === 'http') {
-      httpRow.classList.remove('hidden');
-      stdioRow.classList.add('hidden');
-    } else {
-      httpRow.classList.add('hidden');
-      stdioRow.classList.remove('hidden');
-    }
+  function sanitizeKey(value) {
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, '-');
   }
-
-  modeSelect.addEventListener('change', updateFormVisibility);
-  updateFormVisibility();
 
   function parseCommandLine(line) {
     const regex = /(["'])(?:(?=\\?)\\?.)*?\1|[^\s]+/g;
@@ -55,6 +56,47 @@
         return token.slice(1, -1);
       }
       return token;
+    });
+  }
+
+  function updateFormVisibility() {
+    if (modeSelect.value === 'http') {
+      httpRow.classList.remove('hidden');
+      stdioRow.classList.add('hidden');
+    } else {
+      httpRow.classList.add('hidden');
+      stdioRow.classList.remove('hidden');
+    }
+  }
+
+  function stringifyValue(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch (err) {
+      return String(value);
+    }
+  }
+
+  function extractToolArguments(inputSchema) {
+    if (!inputSchema || typeof inputSchema !== 'object') return [];
+    const schemaType = inputSchema.type;
+    if (schemaType && schemaType !== 'object') return [];
+    const properties =
+      inputSchema.properties && typeof inputSchema.properties === 'object' ? inputSchema.properties : {};
+    const required = new Set(Array.isArray(inputSchema.required) ? inputSchema.required : []);
+    return Object.entries(properties).map(([name, schema]) => {
+      const entry = schema && typeof schema === 'object' ? schema : {};
+      const type = typeof entry.type === 'string' ? entry.type : 'any';
+      return {
+        name,
+        required: required.has(name),
+        schema: entry,
+        type,
+        description: typeof entry.description === 'string' ? entry.description : '',
+        enum: Array.isArray(entry.enum) ? entry.enum : undefined
+      };
     });
   }
 
@@ -71,16 +113,6 @@
       base += ' • from config';
     }
     return base.trim();
-  }
-
-  function stringifyValue(value) {
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'string') return value;
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch (err) {
-      return String(value);
-    }
   }
 
   function buildHandshakeBlock(handshake) {
@@ -123,13 +155,16 @@
       return `<pre class="tool-output">${escapeHtml(stringifyValue(state.output ?? {}))}</pre>`;
     }
     if (state.status === 'error' && state.error) {
-      const details = state.error.details !== undefined ? stringifyValue(state.error.details) : '';
-      let html = '<pre class="tool-output">';
-      html += escapeHtml(
-        `${state.error.kind ? `kind: ${state.error.kind}\n` : ''}${state.error.advice ? `advice: ${state.error.advice}\n` : ''}${details ? `details: ${details}` : ''}`.trim()
-      );
-      html += '</pre>';
-      return html;
+      const lines = [];
+      if (state.error.kind) lines.push(`kind: ${state.error.kind}`);
+      if (state.error.advice) lines.push(`advice: ${state.error.advice}`);
+      if (state.error.details !== undefined) {
+        lines.push(`details: ${stringifyValue(state.error.details)}`);
+      }
+      if (!lines.length) {
+        lines.push(stringifyValue(state.error));
+      }
+      return `<pre class="tool-output">${escapeHtml(lines.join('\n'))}</pre>`;
     }
     return '';
   }
@@ -151,6 +186,22 @@
       html += ` <button class="tool-test-button" data-tool="${escapeAttribute(tool.name)}">Test</button>`;
       if (statusBadge) {
         html += ` ${statusBadge}`;
+      }
+      const args = extractToolArguments(tool.inputSchema);
+      if (args.length) {
+        html += '<div class="tool-arguments"><em>Arguments</em><ul>';
+        args.forEach((arg) => {
+          const metaBits = [];
+          if (arg.type) metaBits.push(arg.type);
+          if (arg.required) metaBits.push('required');
+          if (arg.enum && arg.enum.length) {
+            metaBits.push(`enum: ${arg.enum.map((value) => String(value)).join(', ')}`);
+          }
+          const meta = metaBits.length ? `<span class="argument-meta">${escapeHtml(metaBits.join(' • '))}</span>` : '';
+          const desc = arg.description ? ` — ${escapeHtml(arg.description)}` : '';
+          html += `<li><code>${escapeHtml(arg.name)}</code>${meta}${desc}</li>`;
+        });
+        html += '</ul></div>';
       }
       html += buildToolResult(testState);
       html += '</li>';
@@ -243,8 +294,8 @@
       } else if (entry.status === 'ok') {
         statusDot.classList.add('ok');
         const toolsCount = entry.result?.tools?.length ?? 0;
-        const handshakeLabel = entry.handshake?.protocolVersion ?? 'negotiated';
-        summaryDiv.textContent = `${toolsCount} tools • protocol ${handshakeLabel}`;
+        const protocolVersion = entry.handshake?.protocolVersion ?? 'negotiated';
+        summaryDiv.textContent = `${toolsCount} tools • protocol ${protocolVersion}`;
       } else {
         statusDot.classList.add('error');
         const kind = entry.error?.kind ? entry.error.kind.replace(/_/g, ' ') : 'error';
@@ -267,7 +318,7 @@
 
       detailsDiv.querySelectorAll('.tool-test-button').forEach((button) => {
         button.addEventListener('click', () => {
-          handleToolTest(entry, button.dataset.tool);
+          openToolModal(entry, button.dataset.tool);
         });
       });
 
@@ -280,55 +331,317 @@
     });
   }
 
-  async function handleToolTest(entry, toolName) {
-    if (!toolName) return;
-    const existing = entry.toolTests?.[toolName];
-    const defaultArgs = existing?.lastArgs ?? {};
-    const promptDefault = JSON.stringify(defaultArgs, null, 2);
-    const input = window.prompt(`Enter JSON arguments for "${toolName}"`, promptDefault);
-    if (input === null) {
+  function applyLastArgs(context) {
+    const lastArgs = context.lastArgs ?? {};
+    if (context.argSpecs.length) {
+      context.argSpecs.forEach((spec) => {
+        const field = document.getElementById(spec.inputId);
+        if (!field) return;
+        const value = lastArgs[spec.name];
+        if (value === undefined) return;
+
+        const type = spec.schema?.type;
+        if (spec.enum && spec.enum.length) {
+          const idx = spec.enum.findIndex((item) => Object.is(item, value));
+          field.value = idx >= 0 ? String(idx) : '';
+        } else if (type === 'boolean') {
+          field.value = value === true ? 'true' : value === false ? 'false' : '';
+        } else if (type === 'number' || type === 'integer') {
+          field.value = value;
+        } else if (type === 'array' || type === 'object' || typeof value === 'object') {
+          field.value = stringifyValue(value);
+        } else {
+          field.value = value;
+        }
+      });
+    } else {
+      const textArea = document.getElementById('tool-args-json');
+      if (textArea) {
+        textArea.value = Object.keys(lastArgs).length ? stringifyValue(lastArgs) : '';
+      }
+    }
+  }
+
+  function renderArgumentFields(context) {
+    const container = document.getElementById('tool-modal-form');
+    if (!container) return;
+    if (context.argSpecs.length) {
+      let html = '<p class="modal-note">Provide arguments below. Leave optional fields empty to omit them.</p>';
+      context.argSpecs.forEach((spec) => {
+        const label = escapeHtml(spec.name);
+        const description = spec.description ? `<p class="modal-note">${escapeHtml(spec.description)}</p>` : '';
+        html += `<div class="modal-field"><label class="modal-label" for="${spec.inputId}">${label}`;
+        if (spec.required) {
+          html += '<span class="required">*</span>';
+        }
+        html += '</label>';
+
+        const type = spec.schema?.type;
+        if (spec.enum && spec.enum.length) {
+          html += `<select class="modal-select" id="${spec.inputId}" data-arg-name="${escapeAttribute(
+            spec.name
+          )}" data-arg-type="enum">`;
+          if (!spec.required) {
+            html += '<option value="">(not set)</option>';
+          }
+          spec.enum.forEach((value, idx) => {
+            const optionLabel = String(value);
+            html += `<option value="${idx}">${escapeHtml(optionLabel)}</option>`;
+          });
+          html += '</select>';
+        } else if (type === 'boolean') {
+          html += `<select class="modal-select" id="${spec.inputId}" data-arg-name="${escapeAttribute(
+            spec.name
+          )}" data-arg-type="boolean">`;
+          if (!spec.required) {
+            html += '<option value="">(not set)</option>';
+          }
+          html += '<option value="true">true</option>';
+          html += '<option value="false">false</option>';
+          html += '</select>';
+        } else if (type === 'number' || type === 'integer') {
+          const step = type === 'integer' ? '1' : 'any';
+          html += `<input type="number" class="modal-input" id="${spec.inputId}" data-arg-name="${escapeAttribute(
+            spec.name
+          )}" data-arg-type="${type}" step="${step}" />`;
+        } else if (type === 'array' || type === 'object' || !type) {
+          html += `<textarea class="modal-textarea" id="${spec.inputId}" data-arg-name="${escapeAttribute(
+            spec.name
+          )}" data-arg-type="${type || 'json'}" placeholder="JSON value"></textarea>`;
+        } else {
+          html += `<input type="text" class="modal-input" id="${spec.inputId}" data-arg-name="${escapeAttribute(
+            spec.name
+          )}" data-arg-type="${type}" />`;
+        }
+        html += description;
+        html += '</div>';
+      });
+      container.innerHTML = html;
+    } else {
+      container.innerHTML = `
+        <p class="modal-note">This tool did not declare arguments. Submit to run it with an empty object, or provide custom JSON if needed.</p>
+        <textarea class="modal-textarea" id="tool-args-json" placeholder="{ }"></textarea>
+      `;
+    }
+    applyLastArgs(context);
+  }
+
+  function setModalResult(payload) {
+    const container = document.getElementById('tool-modal-result');
+    if (!container) return;
+    if (!payload) {
+      container.classList.add('hidden');
+      container.innerHTML = '';
       return;
     }
-    let argsObject = {};
-    const trimmed = input.trim();
+
+    container.classList.remove('hidden');
+    if (payload.ok) {
+      container.innerHTML =
+        '<div class="result-status">Tool executed successfully.</div>' +
+        `<pre>${escapeHtml(stringifyValue(payload.output ?? {}))}</pre>`;
+    } else {
+      const error = payload.error ?? {};
+      const lines = [];
+      if (error.kind) lines.push(`kind: ${error.kind}`);
+      if (error.advice) lines.push(`advice: ${error.advice}`);
+      if (error.details !== undefined) lines.push(`details: ${stringifyValue(error.details)}`);
+      if (!lines.length) {
+        lines.push('Execution failed.');
+      }
+      container.innerHTML =
+        '<div class="result-status">Tool execution failed.</div>' + `<pre>${escapeHtml(lines.join('\n'))}</pre>`;
+    }
+  }
+
+  function closeToolModal() {
+    if (toolModal.classList.contains('hidden')) {
+      return;
+    }
+    activeToolContext = null;
+    toolModal.classList.add('hidden');
+    modalBackdrop.classList.add('hidden');
+    toolModalBody.innerHTML = '';
+    toolModalSubmit.disabled = false;
+    toolModalSubmit.textContent = 'Run Tool';
+    setModalResult(null);
+    document.body.style.overflow = previousBodyOverflow;
+  }
+
+  function renderToolModalContent(context) {
+    toolModalTitle.textContent = `Test ${context.tool.name}`;
+    const description = context.tool.description
+      ? escapeHtml(context.tool.description)
+      : 'No description provided.';
+    toolModalBody.innerHTML = `
+      <p class="modal-tool-desc">${description}</p>
+      <div class="modal-form" id="tool-modal-form"></div>
+      <div class="modal-result hidden" id="tool-modal-result"></div>
+    `;
+    renderArgumentFields(context);
+    setModalResult(null);
+  }
+
+  function openToolModal(entry, toolName) {
+    if (!entry?.result?.tools) {
+      alert('No tool information available for this server.');
+      return;
+    }
+    const tool = entry.result.tools.find((t) => t.name === toolName);
+    if (!tool) {
+      alert(`Tool "${toolName}" not found on this server.`);
+      return;
+    }
+    const argSpecs = extractToolArguments(tool.inputSchema).map((spec) => ({
+      ...spec,
+      inputId: `tool-arg-${entry.id}-${sanitizeKey(tool.name)}-${sanitizeKey(spec.name)}`
+    }));
+    const lastArgs = entry.toolTests?.[tool.name]?.lastArgs ?? {};
+    activeToolContext = {
+      entry,
+      tool,
+      argSpecs,
+      lastArgs: { ...lastArgs }
+    };
+    renderToolModalContent(activeToolContext);
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    modalBackdrop.classList.remove('hidden');
+    toolModal.classList.remove('hidden');
+  }
+
+  function gatherArgumentsFromModal() {
+    if (!activeToolContext) return null;
+    const context = activeToolContext;
+    if (context.argSpecs.length) {
+      const args = {};
+      for (const spec of context.argSpecs) {
+        const field = document.getElementById(spec.inputId);
+        if (!field) continue;
+        const rawValue = field.value;
+        const trimmed = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
+        if (!trimmed && spec.required) {
+          alert(`Argument "${spec.name}" is required.`);
+          field.focus();
+          return null;
+        }
+        if (!trimmed) {
+          continue;
+        }
+        const type = spec.schema?.type;
+        let value;
+        try {
+          if (spec.enum && spec.enum.length) {
+            if (rawValue === '') {
+              continue;
+            }
+            const idx = Number(rawValue);
+            if (!Number.isInteger(idx) || idx < 0 || idx >= spec.enum.length) {
+              throw new Error('Invalid choice.');
+            }
+            value = spec.enum[idx];
+          } else if (type === 'boolean') {
+            if (rawValue === 'true' || rawValue === true) {
+              value = true;
+            } else if (rawValue === 'false' || rawValue === false) {
+              value = false;
+            } else {
+              throw new Error('Expected boolean value.');
+            }
+          } else if (type === 'number' || type === 'integer') {
+            const num = Number(trimmed);
+            if (Number.isNaN(num)) {
+              throw new Error('Expected numeric value.');
+            }
+            value = type === 'integer' ? Math.trunc(num) : num;
+          } else if (type === 'array' || type === 'object' || !type) {
+            value = JSON.parse(rawValue);
+          } else {
+            value = rawValue;
+          }
+        } catch (err) {
+          alert(`Unable to parse argument "${spec.name}": ${err.message}`);
+          field.focus();
+          return null;
+        }
+        args[spec.name] = value;
+      }
+      return args;
+    }
+    const textArea = document.getElementById('tool-args-json');
+    const raw = textArea ? textArea.value.trim() : '';
+    if (!raw) return {};
     try {
-      argsObject = trimmed ? JSON.parse(trimmed) : {};
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('JSON must describe an object.');
+      }
+      return parsed;
     } catch (err) {
       alert(`Unable to parse JSON arguments: ${err.message}`);
+      textArea?.focus();
+      return null;
+    }
+  }
+
+  async function submitToolModal() {
+    if (!activeToolContext) {
       return;
     }
-    if (!entry.toolTests) {
-      entry.toolTests = {};
+    const args = gatherArgumentsFromModal();
+    if (args === null) {
+      return;
     }
-    entry.toolTests[toolName] = { status: 'pending', lastArgs: argsObject };
-    renderServers();
+    const { entry, tool } = activeToolContext;
+    toolModalSubmit.disabled = true;
+    toolModalSubmit.textContent = 'Running…';
+    const runningContainer = document.getElementById('tool-modal-result');
+    if (runningContainer) {
+      runningContainer.classList.remove('hidden');
+      runningContainer.innerHTML = '<div class="result-status">Running…</div>';
+    }
+
     try {
       const response = await fetch('/api/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spec: entry.spec, toolName, toolArgs: argsObject })
+        body: JSON.stringify({ spec: entry.spec, toolName: tool.name, toolArgs: args })
       });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data?.error?.details || `HTTP ${response.status}`);
       }
+      if (!entry.toolTests) {
+        entry.toolTests = {};
+      }
       if (data.ok) {
-        entry.toolTests[toolName] = { status: 'ok', output: data.output, lastArgs: argsObject };
+        entry.toolTests[tool.name] = { status: 'ok', output: data.output, lastArgs: args };
+        activeToolContext.lastArgs = args;
+        setModalResult({ ok: true, output: data.output });
       } else {
-        entry.toolTests[toolName] = {
+        entry.toolTests[tool.name] = {
           status: 'error',
           error: data.error ?? { kind: 'tool_error', details: 'Unknown error' },
-          lastArgs: argsObject
+          lastArgs: args
         };
+        activeToolContext.lastArgs = args;
+        setModalResult({ ok: false, error: data.error });
       }
+      renderServers();
     } catch (err) {
-      entry.toolTests[toolName] = {
+      entry.toolTests = entry.toolTests || {};
+      entry.toolTests[tool.name] = {
         status: 'error',
         error: { kind: 'network_error', details: err.message },
-        lastArgs: argsObject
+        lastArgs: args
       };
+      activeToolContext.lastArgs = args;
+      setModalResult({ ok: false, error: { kind: 'network_error', details: err.message } });
+      renderServers();
+    } finally {
+      toolModalSubmit.disabled = false;
+      toolModalSubmit.textContent = 'Run Tool';
     }
-    renderServers();
   }
 
   async function diagnoseConfigContent(text, fileName) {
@@ -347,7 +660,6 @@
         const message = data?.error?.details || `Unable to diagnose config (HTTP ${response.status})`;
         throw new Error(message);
       }
-      // Remove previous config-derived entries
       for (let i = servers.length - 1; i >= 0; i -= 1) {
         if (servers[i].source === 'config') {
           servers.splice(i, 1);
@@ -398,6 +710,9 @@
     }
   }
 
+  modeSelect.addEventListener('change', updateFormVisibility);
+  updateFormVisibility();
+
   loadConfigButton.addEventListener('click', () => {
     if (isLoadingConfig) return;
     configFileInput.click();
@@ -437,7 +752,10 @@
       const [command, ...args] = tokens;
       spec = { mode, command, args };
     }
-    const displayName = mode === 'http' ? spec.url : `${spec.command} ${Array.isArray(spec.args) ? spec.args.join(' ') : ''}`.trim();
+    const displayName =
+      mode === 'http'
+        ? spec.url
+        : `${spec.command} ${Array.isArray(spec.args) ? spec.args.join(' ') : ''}`.trim();
     const entry = {
       id: Date.now(),
       source: 'manual',
@@ -478,5 +796,14 @@
       entry.error = { kind: 'network_error', details: err.message };
     }
     renderServers();
+  });
+
+  toolModalSubmit.addEventListener('click', submitToolModal);
+  toolModalClose.addEventListener('click', closeToolModal);
+  modalBackdrop.addEventListener('click', closeToolModal);
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeToolModal();
+    }
   });
 })();

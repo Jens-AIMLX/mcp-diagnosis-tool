@@ -221,7 +221,13 @@ async function diagnose(spec) {
       const toolsList = await withTimeout(client.listTools(), DEFAULT_TIMEOUT_MS, 'tools/list');
       const arr = Array.isArray(toolsList) ? toolsList : toolsList?.tools;
       if (Array.isArray(arr)) {
-        tools = arr.map((t) => ({ name: t.name, description: t.description }));
+        tools = arr.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema ?? null,
+          outputSchema: t.outputSchema ?? null,
+          annotations: t.annotations ?? null
+        }));
       }
     } catch (e) {
       // Some servers may not implement tools/list; ignore

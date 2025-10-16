@@ -78,6 +78,18 @@
       </div>
     </template>
 
+    <div id="modal-backdrop" class="modal-backdrop hidden"></div>
+    <div id="tool-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="tool-modal-title">
+      <div class="modal-content">
+        <button type="button" class="modal-close" id="tool-modal-close" aria-label="Close">×</button>
+        <h3 id="tool-modal-title">Test Tool</h3>
+        <div id="tool-modal-body" class="modal-body"></div>
+        <div class="modal-actions">
+          <button type="button" id="tool-modal-submit">Run Tool</button>
+        </div>
+      </div>
+    </div>
+
     <script src="script.js"></script>
   </body>
 </html>
