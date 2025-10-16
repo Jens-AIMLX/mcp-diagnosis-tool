@@ -15,12 +15,16 @@
     <main>
       <section id="config-section">
         <h2>Load MCP Configuration</h2>
-        <p class="section-subtitle">Select an <code>mcp.json</code> file to diagnose every configured server in one go.</p>
+        <p class="section-subtitle">Load a standard <code>mcp.json</code> or a Codex-compatible <code>config.toml</code>. Convert between formats with a single click.</p>
         <div class="config-actions">
-          <button type="button" id="load-config-btn">Load mcp.json</button>
+          <button type="button" id="load-json-btn">Load standard mcp.json</button>
+          <button type="button" id="load-toml-btn">Load mcp.toml</button>
+          <button type="button" id="save-json-btn" class="secondary" disabled>Save as JSON</button>
+          <button type="button" id="save-toml-btn" class="secondary" disabled>Save as TOML</button>
           <span id="config-file-name" class="config-file-name">No file selected</span>
         </div>
-        <input type="file" id="config-file-input" accept=".json,application/json" class="hidden" />
+        <input type="file" id="config-json-input" accept=".json,application/json" class="hidden" />
+        <input type="file" id="config-toml-input" accept=".toml,text/plain" class="hidden" />
       </section>
 
       <section id="add-server-section">
@@ -86,6 +90,7 @@
         <div id="tool-modal-body" class="modal-body"></div>
         <div class="modal-actions">
           <button type="button" id="tool-modal-submit">Run Tool</button>
+          <button type="button" id="tool-modal-report" class="secondary" disabled>Download Report</button>
         </div>
       </div>
     </div>

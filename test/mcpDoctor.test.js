@@ -4,7 +4,14 @@ const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
-const { loadMcpConfig, diagnoseConfigFile, parseMcpConfigContent, diagnoseConfigEntries } = require('../mcpDoctor');
+const {
+  loadMcpConfig,
+  diagnoseConfigFile,
+  parseMcpConfigContent,
+  diagnoseConfigEntries,
+  serializeMcpConfigToJson,
+  serializeMcpConfigToToml
+} = require('../mcpDoctor');
 
 async function writeTempConfig(data) {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-config-'));
@@ -35,26 +42,27 @@ test('loadMcpConfig parses stdio and http entries', async (t) => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  const { path: resolvedPath, servers } = await loadMcpConfig(filePath);
+  const normalized = await loadMcpConfig(filePath);
+  const { path: resolvedPath } = normalized;
+
+  assert.strictEqual(normalized.format, 'json');
+  assert.ok(normalized.topLevel);
+  const { servers } = normalized;
 
   assert.strictEqual(resolvedPath, path.resolve(filePath));
   assert.strictEqual(servers.length, 3);
 
   const playwright = servers.find((s) => s.name === 'playwright');
-  assert.deepEqual(playwright, {
-    name: 'playwright',
-    mode: 'stdio',
-    command: 'npx',
-    args: ['-y', '@playwright/mcp@latest'],
-    env: { FOO: 'bar', COUNT: '2' }
-  });
+  assert.ok(playwright);
+  assert.strictEqual(playwright.mode, 'stdio');
+  assert.strictEqual(playwright.command, 'npx');
+  assert.deepEqual(playwright.args, ['-y', '@playwright/mcp@latest']);
+  assert.deepEqual(playwright.env, { FOO: 'bar', COUNT: '2' });
 
   const httpServer = servers.find((s) => s.name === 'httpServer');
-  assert.deepEqual(httpServer, {
-    name: 'httpServer',
-    mode: 'http',
-    url: 'https://example.com/mcp'
-  });
+  assert.ok(httpServer);
+  assert.strictEqual(httpServer.mode, 'http');
+  assert.strictEqual(httpServer.url, 'https://example.com/mcp');
 });
 
 test('parseMcpConfigContent accepts JSON string input', () => {
@@ -67,15 +75,15 @@ test('parseMcpConfigContent accepts JSON string input', () => {
       }
     }
   });
-  const { servers } = parseMcpConfigContent(json);
-  assert.strictEqual(servers.length, 1);
-  assert.deepEqual(servers[0], {
-    name: 'hello_world',
-    mode: 'stdio',
-    command: 'node',
-    args: ['server.js'],
-    env: { ENABLE_SOMETHING: 'true' }
-  });
+  const normalized = parseMcpConfigContent(json);
+  assert.strictEqual(normalized.format, 'json');
+  assert.strictEqual(normalized.servers.length, 1);
+  const server = normalized.servers[0];
+  assert.strictEqual(server.name, 'hello_world');
+  assert.strictEqual(server.mode, 'stdio');
+  assert.strictEqual(server.command, 'node');
+  assert.deepEqual(server.args, ['server.js']);
+  assert.deepEqual(server.env, { ENABLE_SOMETHING: 'true' });
 });
 
 test('diagnoseConfigFile invokes diagnose for each entry', async (t) => {
@@ -161,4 +169,73 @@ test('diagnoseConfigEntries generates specs from parsed servers', async () => {
     mode: 'http',
     url: 'http://localhost:1234/mcp'
   });
+});
+
+test('parseMcpConfigContent handles TOML input', () => {
+  const toml = `
+experimental_use_rmcp_client = true
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+
+[mcp_servers.docs]
+url = "https://example.com/mcp"
+bearer_token_env_var = "DOCS_TOKEN"
+`;
+  const normalized = parseMcpConfigContent(toml, 'toml');
+  assert.strictEqual(normalized.format, 'toml');
+  assert.strictEqual(normalized.topLevel.experimental_use_rmcp_client, true);
+  assert.strictEqual(normalized.servers.length, 2);
+  const stdio = normalized.servers.find((s) => s.name === 'playwright');
+  assert.ok(stdio);
+  assert.strictEqual(stdio.mode, 'stdio');
+  assert.strictEqual(stdio.command, 'npx');
+  assert.deepEqual(stdio.args, ['-y', '@playwright/mcp@latest']);
+  const http = normalized.servers.find((s) => s.name === 'docs');
+  assert.ok(http);
+  assert.strictEqual(http.mode, 'http');
+  assert.strictEqual(http.url, 'https://example.com/mcp');
+  assert.strictEqual(http.bearerTokenEnvVar, 'DOCS_TOKEN');
+});
+
+test('serializeMcpConfigToJson round-trips normalized config', () => {
+  const toml = `
+experimental_use_rmcp_client = true
+
+[mcp_servers.cli]
+command = "node"
+args = ["cli.js"]
+tool_timeout_sec = 45
+`;
+  const normalized = parseMcpConfigContent(toml, 'toml');
+  const jsonOutput = serializeMcpConfigToJson(normalized);
+  const parsed = JSON.parse(jsonOutput);
+  assert.strictEqual(parsed.experimental_use_rmcp_client, true);
+  assert.ok(parsed.mcpServers.cli);
+  assert.strictEqual(parsed.mcpServers.cli.command, 'node');
+  assert.deepEqual(parsed.mcpServers.cli.args, ['cli.js']);
+  assert.strictEqual(parsed.mcpServers.cli.toolTimeoutSec, 45);
+});
+
+test('serializeMcpConfigToToml round-trips normalized config', () => {
+  const json = {
+    experimental_use_rmcp_client: true,
+    mcpServers: {
+      httpTool: {
+        url: 'https://example.com/mcp',
+        bearerTokenEnvVar: 'HTTP_TOKEN'
+      }
+    }
+  };
+  const normalized = parseMcpConfigContent(json, 'json');
+  const tomlOutput = serializeMcpConfigToToml(normalized);
+  const reparsed = parseMcpConfigContent(tomlOutput, 'toml');
+  assert.strictEqual(reparsed.format, 'toml');
+  assert.strictEqual(reparsed.topLevel.experimental_use_rmcp_client, true);
+  const server = reparsed.servers.find((s) => s.name === 'httpTool');
+  assert.ok(server);
+  assert.strictEqual(server.mode, 'http');
+  assert.strictEqual(server.url, 'https://example.com/mcp');
+  assert.strictEqual(server.bearerTokenEnvVar, 'HTTP_TOKEN');
 });

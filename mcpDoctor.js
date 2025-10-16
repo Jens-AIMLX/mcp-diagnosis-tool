@@ -23,6 +23,7 @@ const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/cli
 const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');
 const fs = require('fs/promises');
 const path = require('path');
+const TOML = require('@iarna/toml');
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -316,155 +317,183 @@ async function loadMcpConfig(configPath) {
     error.cause = err;
     throw error;
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (err) {
-    const error = new Error(`Malformed JSON in MCP config file at ${resolvedPath}: ${err.message}`);
-    error.code = 'CONFIG_PARSE_ERROR';
-    error.cause = err;
-    throw error;
-  }
-  const { servers } = normalizeMcpConfig(parsed);
-
-  return { path: resolvedPath, servers };
+  const ext = path.extname(resolvedPath).toLowerCase();
+  const formatHint = ext === '.toml' ? 'toml' : ext === '.json' ? 'json' : undefined;
+  const normalized = parseMcpConfigContent(raw, formatHint);
+  return { path: resolvedPath, ...normalized };
 }
 
 /**
  * Validate and normalise a parsed MCP configuration object.
  *
  * @param {unknown} parsed
- * @returns {{servers: Array<{name: string, mode: 'stdio'|'http', command?: string, args?: string[], env?: Record<string, string>, url?: string}>}}
+ * @param {{format: 'json'|'toml'}} options
+ * @returns {{format: 'json'|'toml', topLevel: Record<string, unknown>, servers: Array<object>}}
  */
-function normalizeMcpConfig(parsed) {
-  const serversNode = parsed?.mcpServers;
-  if (!serversNode || typeof serversNode !== 'object' || Array.isArray(serversNode)) {
-    const error = new Error('mcp.json must contain an "mcpServers" object with named entries.');
-    error.code = 'CONFIG_SCHEMA_ERROR';
-    throw error;
+function normalizeMcpConfig(parsed, { format }) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('MCP configuration must be a JSON/TOML object.');
+  }
+  const topLevel = deepClone(parsed);
+
+  if (format === 'json') {
+    // Allow both mcpServers and mcp_servers just in case.
+    const serversNode = parsed.mcpServers ?? parsed.mcp_servers;
+    if (!serversNode || typeof serversNode !== 'object' || Array.isArray(serversNode)) {
+      const error = new Error('mcp.json must contain an "mcpServers" object with named entries.');
+      error.code = 'CONFIG_SCHEMA_ERROR';
+      throw error;
+    }
+    delete topLevel.mcpServers;
+    delete topLevel.mcp_servers;
+    const servers = normalizeServersMap(serversNode, { format });
+    return { format, topLevel, servers };
   }
 
-  const servers = [];
-  for (const [name, serverConfig] of Object.entries(serversNode)) {
-    if (!name.trim()) {
-      throw new Error('Server names in "mcpServers" must not be empty.');
+  if (format === 'toml') {
+    const serversNode = parsed.mcp_servers;
+    if (!serversNode || typeof serversNode !== 'object' || Array.isArray(serversNode)) {
+      const error = new Error('config.toml must contain an "mcp_servers" table with named entries.');
+      error.code = 'CONFIG_SCHEMA_ERROR';
+      throw error;
     }
-    if (!serverConfig || typeof serverConfig !== 'object' || Array.isArray(serverConfig)) {
-      throw new Error(`Server "${name}" must be an object.`);
-    }
-    if (serverConfig.command) {
-      if (typeof serverConfig.command !== 'string' || !serverConfig.command.trim()) {
-        throw new Error(`Server "${name}" has an invalid "command" value.`);
-      }
-      let args = [];
-      if (serverConfig.args !== undefined) {
-        if (!Array.isArray(serverConfig.args)) {
-          throw new Error(`Server "${name}" args must be an array of strings.`);
-        }
-        args = serverConfig.args.map((value, idx) => {
-          if (typeof value !== 'string') {
-            throw new Error(`Server "${name}" args[${idx}] must be a string.`);
-          }
-          return value;
-        });
-      }
-      let env = undefined;
-      if (serverConfig.env !== undefined) {
-        if (!serverConfig.env || typeof serverConfig.env !== 'object' || Array.isArray(serverConfig.env)) {
-          throw new Error(`Server "${name}" env must be an object of key/value pairs.`);
-        }
-        env = {};
-        for (const [key, value] of Object.entries(serverConfig.env)) {
-          env[key] = value === undefined || value === null ? '' : String(value);
-        }
-      }
-      servers.push({
-        name,
-        mode: 'stdio',
-        command: serverConfig.command,
-        args,
-        env
-      });
-      continue;
-    }
-    if (serverConfig.url) {
-      if (typeof serverConfig.url !== 'string' || !serverConfig.url.trim()) {
-        throw new Error(`Server "${name}" has an invalid "url" value.`);
-      }
-      servers.push({
-        name,
-        mode: 'http',
-        url: serverConfig.url.trim()
-      });
-      continue;
-    }
-    throw new Error(`Server "${name}" must specify either a "command" (stdio) or a "url" (http).`);
+    delete topLevel.mcp_servers;
+    const servers = normalizeServersMap(serversNode, { format });
+    return { format, topLevel, servers };
   }
 
-  return { servers };
+  throw new Error(`Unsupported MCP config format: ${format}`);
 }
 
 /**
  * Diagnose all servers defined in an MCP configuration file.
  *
- * @param {string} configPath Path to the mcp.json file
+ * @param {string} configPath Path to the config file
  * @param {{ diagnoseFn?: typeof diagnose }} [options] Optional overrides for testing
  * @returns {Promise<Array<{name: string, mode: 'stdio'|'http', spec: object, result: any}>>}
  */
 async function diagnoseConfigFile(configPath, options = {}) {
-  const { servers } = await loadMcpConfig(configPath);
-  return diagnoseConfigEntries(servers, options);
+  const normalized = await loadMcpConfig(configPath);
+  return diagnoseConfigEntries(normalized, options);
 }
 
 /**
- * Parse raw JSON content for an MCP configuration and normalise it.
+ * Parse raw configuration content and normalise it.
  *
- * @param {string|object} content JSON string or already parsed object
- * @returns {{servers: Array<{name: string, mode: 'stdio'|'http', command?: string, args?: string[], env?: Record<string, string>, url?: string}>}}
+ * @param {string|object} content Raw config string or already parsed object
+ * @param {'json'|'toml'} [formatHint]
+ * @returns {{format: 'json'|'toml', topLevel: Record<string, unknown>, servers: Array<object>}}
  */
-function parseMcpConfigContent(content) {
+function parseMcpConfigContent(content, formatHint) {
   let parsed;
+  let format = formatHint ?? null;
   if (typeof content === 'string') {
-    try {
-      parsed = JSON.parse(content);
-    } catch (err) {
-      const error = new Error(`Malformed JSON content: ${err.message}`);
-      error.code = 'CONFIG_PARSE_ERROR';
-      error.cause = err;
-      throw error;
+    const trimmed = content.trim();
+    if (!trimmed) {
+      throw new Error('Config content is empty.');
+    }
+    if (!format || format === 'json') {
+      try {
+        parsed = JSON.parse(trimmed);
+        format = 'json';
+      } catch (jsonErr) {
+        if (format === 'json') {
+          const error = new Error(`Malformed JSON content: ${jsonErr.message}`);
+          error.code = 'CONFIG_PARSE_ERROR';
+          error.cause = jsonErr;
+          throw error;
+        }
+        try {
+          parsed = TOML.parse(trimmed);
+          format = 'toml';
+        } catch (tomlErr) {
+          const error = new Error(`Unable to parse config content as JSON or TOML: ${tomlErr.message}`);
+          error.code = 'CONFIG_PARSE_ERROR';
+          error.cause = tomlErr;
+          throw error;
+        }
+      }
+    } else if (format === 'toml') {
+      try {
+        parsed = TOML.parse(trimmed);
+      } catch (tomlErr) {
+        const error = new Error(`Malformed TOML content: ${tomlErr.message}`);
+        error.code = 'CONFIG_PARSE_ERROR';
+        error.cause = tomlErr;
+        throw error;
+      }
+    } else {
+      throw new Error(`Unsupported config format hint: ${format}`);
     }
   } else if (content && typeof content === 'object') {
     parsed = content;
+    if (!format) {
+      format = 'json';
+    }
   } else {
-    throw new Error('Config content must be a JSON string or object.');
+    throw new Error('Config content must be a string or object.');
   }
-  return normalizeMcpConfig(parsed);
+
+  const resolvedFormat = format ?? 'json';
+  return normalizeMcpConfig(parsed, { format: resolvedFormat });
 }
 
 /**
  * Diagnose an array of server definitions produced by normalizeMcpConfig.
  *
- * @param {Array<{name: string, mode: 'stdio'|'http', command?: string, args?: string[], env?: Record<string, string>, url?: string}>} servers
+ * @param {{servers: Array<object>}|Array<object>} configOrServers
  * @param {{ diagnoseFn?: typeof diagnose }} [options]
  * @returns {Promise<Array<{name: string, mode: 'stdio'|'http', spec: object, result: any}>>}
  */
-async function diagnoseConfigEntries(servers, options = {}) {
+async function diagnoseConfigEntries(configOrServers, options = {}) {
+  const servers = Array.isArray(configOrServers) ? configOrServers : configOrServers?.servers;
+  if (!Array.isArray(servers)) {
+    throw new Error('No MCP servers found to diagnose.');
+  }
   const diagnoseFn = options.diagnoseFn || diagnose;
   const results = [];
   for (const entry of servers) {
-    const spec =
-      entry.mode === 'http'
-        ? { mode: 'http', url: entry.url }
-        : {
-            mode: 'stdio',
-            command: entry.command,
-            args: [...(entry.args || [])],
-            ...(entry.env ? { env: { ...entry.env } } : {})
-          };
+    const spec = buildSpecFromEntry(entry);
     const result = await diagnoseFn(spec);
     results.push({ name: entry.name, mode: entry.mode, spec, result });
   }
   return results;
+}
+
+/**
+ * Convert a normalised MCP configuration back into the JSON structure.
+ *
+ * @param {{format: string, topLevel: Record<string, unknown>, servers: Array<object>}} config
+ * @returns {string}
+ */
+function serializeMcpConfigToJson(config) {
+  validateNormalizedConfig(config);
+  const root = deepClone(config.topLevel) || {};
+  const mcpServers = {};
+  for (const server of config.servers) {
+    const serverObj = buildJsonServerObject(server);
+    mcpServers[server.name] = serverObj;
+  }
+  root.mcpServers = mcpServers;
+  return JSON.stringify(root, null, 2);
+}
+
+/**
+ * Convert a normalised MCP configuration back into TOML.
+ *
+ * @param {{format: string, topLevel: Record<string, unknown>, servers: Array<object>}} config
+ * @returns {string}
+ */
+function serializeMcpConfigToToml(config) {
+  validateNormalizedConfig(config);
+  const root = deepClone(config.topLevel) || {};
+  const mcpServers = {};
+  for (const server of config.servers) {
+    const serverTable = buildTomlServerObject(server);
+    mcpServers[server.name] = serverTable;
+  }
+  root.mcp_servers = mcpServers;
+  return `${TOML.stringify(root).trim()}\n`;
 }
 
 /**
@@ -518,5 +547,342 @@ module.exports = {
   diagnoseConfigFile,
   parseMcpConfigContent,
   diagnoseConfigEntries,
+  serializeMcpConfigToJson,
+  serializeMcpConfigToToml,
   callTool
 };
+
+// ---------- normalisation helpers ----------
+
+const SERVER_KEY_ALIASES = {
+  bearer_token_env_var: 'bearerTokenEnvVar',
+  bearerTokenEnvVar: 'bearerTokenEnvVar',
+  bearer_token_file: 'bearerTokenFile',
+  bearerTokenFile: 'bearerTokenFile',
+  startup_timeout_sec: 'startupTimeoutSec',
+  startupTimeoutSec: 'startupTimeoutSec',
+  tool_timeout_sec: 'toolTimeoutSec',
+  toolTimeoutSec: 'toolTimeoutSec'
+};
+
+const KNOWN_SERVER_KEYS = new Set([
+  'command',
+  'args',
+  'env',
+  'cwd',
+  'stderr',
+  'url',
+  'enabled',
+  'bearerTokenEnvVar',
+  'bearerTokenFile',
+  'startupTimeoutSec',
+  'toolTimeoutSec'
+]);
+
+function normalizeServersMap(serversNode, { format }) {
+  const servers = [];
+  for (const [rawName, serverConfig] of Object.entries(serversNode)) {
+    const name = String(rawName || '').trim();
+    if (!name) {
+      throw new Error('Server names must not be empty.');
+    }
+    if (!serverConfig || typeof serverConfig !== 'object' || Array.isArray(serverConfig)) {
+      throw new Error(`Server "${name}" must be an object/table.`);
+    }
+    const rawClone = deepClone(serverConfig);
+    const normalized = {
+      name,
+      mode: null,
+      command: undefined,
+      args: undefined,
+      env: undefined,
+      cwd: serverConfig.cwd ? String(serverConfig.cwd) : undefined,
+      stderr: serverConfig.stderr,
+      url: undefined,
+      enabled: typeof serverConfig.enabled === 'boolean' ? serverConfig.enabled : undefined,
+      bearerTokenEnvVar: undefined,
+      bearerTokenFile: undefined,
+      startupTimeoutSec: parseOptionalNumber(serverConfig.startup_timeout_sec ?? serverConfig.startupTimeoutSec),
+      toolTimeoutSec: parseOptionalNumber(serverConfig.tool_timeout_sec ?? serverConfig.toolTimeoutSec),
+      extra: {},
+      raw: rawClone,
+      sourceFormat: format
+    };
+
+    for (const [key, value] of Object.entries(serverConfig)) {
+      const canonicalKey = SERVER_KEY_ALIASES[key] ?? key;
+      switch (canonicalKey) {
+        case 'command':
+          if (typeof value === 'string' && value.trim()) {
+            normalized.command = value.trim();
+          }
+          break;
+        case 'args':
+          normalized.args = normalizeArgs(value);
+          break;
+        case 'env':
+          normalized.env = normalizeEnvMap(value);
+          break;
+        case 'url':
+          if (typeof value === 'string' && value.trim()) {
+            normalized.url = value.trim();
+          }
+          break;
+        case 'bearerTokenEnvVar':
+          if (value !== undefined && value !== null) {
+            normalized.bearerTokenEnvVar = String(value);
+          }
+          break;
+        case 'bearerTokenFile':
+          if (value !== undefined && value !== null) {
+            normalized.bearerTokenFile = String(value);
+          }
+          break;
+        case 'startupTimeoutSec':
+          normalized.startupTimeoutSec = parseOptionalNumber(value);
+          break;
+        case 'toolTimeoutSec':
+          normalized.toolTimeoutSec = parseOptionalNumber(value);
+          break;
+        case 'cwd':
+          normalized.cwd = typeof value === 'string' ? value : normalized.cwd;
+          break;
+        case 'stderr':
+          normalized.stderr = value;
+          break;
+        case 'enabled':
+          normalized.enabled = typeof value === 'boolean' ? value : normalized.enabled;
+          break;
+        default:
+          if (!KNOWN_SERVER_KEYS.has(canonicalKey)) {
+            normalized.extra[key] = deepClone(value);
+          }
+      }
+    }
+
+    if (normalized.url) {
+      normalized.mode = 'http';
+    } else if (normalized.command) {
+      normalized.mode = 'stdio';
+    } else {
+      throw new Error(`Server "${name}" must define either "command" (stdio) or "url" (http).`);
+    }
+
+    if (normalized.mode === 'stdio' && !normalized.command) {
+      throw new Error(`STDIO server "${name}" requires a "command".`);
+    }
+    if (normalized.mode === 'http' && !normalized.url) {
+      throw new Error(`HTTP server "${name}" requires a "url".`);
+    }
+
+    servers.push(normalized);
+  }
+  return servers;
+}
+
+function normalizeArgs(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error('Server "args" must be an array of strings.');
+  }
+  return value.map((item, idx) => {
+    if (item === undefined || item === null) {
+      throw new Error(`Server args[${idx}] must not be null/undefined.`);
+    }
+    return String(item);
+  });
+}
+
+function normalizeEnvMap(value) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Server "env" must be an object of key/value pairs.');
+  }
+  const env = {};
+  for (const [key, raw] of Object.entries(value)) {
+    env[key] = raw === undefined || raw === null ? '' : String(raw);
+  }
+  return env;
+}
+
+function parseOptionalNumber(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
+function deepClone(value) {
+  if (value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function buildSpecFromEntry(entry) {
+  if (entry.mode === 'http') {
+    const spec = {
+      mode: 'http',
+      url: entry.url
+    };
+    return spec;
+  }
+  const spec = {
+    mode: 'stdio',
+    command: entry.command,
+    args: Array.isArray(entry.args) ? [...entry.args] : []
+  };
+  if (entry.env) {
+    spec.env = { ...entry.env };
+  }
+  if (entry.cwd) {
+    spec.cwd = entry.cwd;
+  }
+  if (entry.stderr !== undefined) {
+    spec.stderr = entry.stderr;
+  }
+  return spec;
+}
+
+function buildJsonServerObject(server) {
+  if (server.mode === 'stdio' && !server.command) {
+    throw new Error(`STDIO server "${server.name}" is missing a command.`);
+  }
+  if (server.mode === 'http' && !server.url) {
+    throw new Error(`HTTP server "${server.name}" is missing a url.`);
+  }
+  const obj = {};
+  if (server.mode === 'stdio') {
+    obj.command = server.command;
+    if (Array.isArray(server.args) && server.args.length) {
+      obj.args = [...server.args];
+    }
+    if (server.env && Object.keys(server.env).length) {
+      obj.env = { ...server.env };
+    }
+    if (server.cwd) {
+      obj.cwd = server.cwd;
+    }
+    if (server.stderr !== undefined) {
+      obj.stderr = server.stderr;
+    }
+  } else if (server.mode === 'http') {
+    obj.url = server.url;
+    if (server.env && Object.keys(server.env).length) {
+      obj.env = { ...server.env };
+    }
+    if (server.bearerTokenEnvVar) {
+      obj.bearerTokenEnvVar = server.bearerTokenEnvVar;
+    }
+    if (server.bearerTokenFile) {
+      obj.bearerTokenFile = server.bearerTokenFile;
+    }
+  }
+  if (server.enabled !== undefined) {
+    obj.enabled = server.enabled;
+  }
+  if (server.toolTimeoutSec !== undefined) {
+    obj.toolTimeoutSec = server.toolTimeoutSec;
+  }
+  if (server.startupTimeoutSec !== undefined) {
+    obj.startupTimeoutSec = server.startupTimeoutSec;
+  }
+  if (server.extra && typeof server.extra === 'object') {
+    for (const [key, value] of Object.entries(server.extra)) {
+      if (value !== undefined) {
+        obj[key] = deepClone(value);
+      }
+    }
+  }
+  pruneUndefined(obj);
+  return obj;
+}
+
+function buildTomlServerObject(server) {
+  if (server.mode === 'stdio' && !server.command) {
+    throw new Error(`STDIO server "${server.name}" is missing a command.`);
+  }
+  if (server.mode === 'http' && !server.url) {
+    throw new Error(`HTTP server "${server.name}" is missing a url.`);
+  }
+  const table = {};
+  if (server.mode === 'stdio') {
+    table.command = server.command;
+    if (Array.isArray(server.args) && server.args.length) {
+      table.args = [...server.args];
+    }
+    if (server.env && Object.keys(server.env).length) {
+      table.env = { ...server.env };
+    }
+    if (server.cwd) {
+      table.cwd = server.cwd;
+    }
+    if (server.stderr !== undefined) {
+      table.stderr = server.stderr;
+    }
+  } else if (server.mode === 'http') {
+    table.url = server.url;
+    if (server.env && Object.keys(server.env).length) {
+      table.env = { ...server.env };
+    }
+    if (server.bearerTokenEnvVar) {
+      table.bearer_token_env_var = server.bearerTokenEnvVar;
+    }
+    if (server.bearerTokenFile) {
+      table.bearer_token_file = server.bearerTokenFile;
+    }
+  }
+  if (server.enabled !== undefined) {
+    table.enabled = server.enabled;
+  }
+  if (server.toolTimeoutSec !== undefined) {
+    table.tool_timeout_sec = server.toolTimeoutSec;
+  }
+  if (server.startupTimeoutSec !== undefined) {
+    table.startup_timeout_sec = server.startupTimeoutSec;
+  }
+  if (server.extra && typeof server.extra === 'object') {
+    for (const [key, value] of Object.entries(server.extra)) {
+      if (value === undefined) continue;
+      table[toSnakeCase(key)] = deepClone(value);
+    }
+  }
+  pruneUndefined(table);
+  return table;
+}
+
+function pruneUndefined(obj) {
+  for (const key of Object.keys(obj)) {
+    if (obj[key] === undefined) {
+      delete obj[key];
+    } else if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+      pruneUndefined(obj[key]);
+      if (Object.keys(obj[key]).length === 0) {
+        delete obj[key];
+      }
+    } else if (Array.isArray(obj[key]) && obj[key].length === 0) {
+      delete obj[key];
+    }
+  }
+}
+
+function toSnakeCase(key) {
+  return key
+    .replace(/([A-Z])/g, '_$1')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
+}
+
+function validateNormalizedConfig(config) {
+  if (!config || typeof config !== 'object') {
+    throw new Error('Invalid config payload.');
+  }
+  if (!Array.isArray(config.servers)) {
+    throw new Error('Config payload missing servers array.');
+  }
+  config.servers.forEach((server) => {
+    if (!server || typeof server !== 'object') {
+      throw new Error('Invalid server entry in config payload.');
+    }
+    if (!server.name) {
+      throw new Error('Server entry missing name.');
+    }
+  });
+}

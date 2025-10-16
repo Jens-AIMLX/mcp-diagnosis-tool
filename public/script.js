@@ -13,8 +13,12 @@
   const serversList = document.getElementById('servers-list');
   const template = document.getElementById('server-template');
 
-  const loadConfigButton = document.getElementById('load-config-btn');
-  const configFileInput = document.getElementById('config-file-input');
+  const loadJsonButton = document.getElementById('load-json-btn');
+  const loadTomlButton = document.getElementById('load-toml-btn');
+  const saveJsonButton = document.getElementById('save-json-btn');
+  const saveTomlButton = document.getElementById('save-toml-btn');
+  const configJsonInput = document.getElementById('config-json-input');
+  const configTomlInput = document.getElementById('config-toml-input');
   const configFileNameLabel = document.getElementById('config-file-name');
 
   const modalBackdrop = document.getElementById('modal-backdrop');
@@ -22,10 +26,13 @@
   const toolModalBody = document.getElementById('tool-modal-body');
   const toolModalTitle = document.getElementById('tool-modal-title');
   const toolModalSubmit = document.getElementById('tool-modal-submit');
+  const toolModalReport = document.getElementById('tool-modal-report');
   const toolModalClose = document.getElementById('tool-modal-close');
 
   const servers = [];
   let isLoadingConfig = false;
+  let currentConfig = null;
+  let currentConfigFileName = '';
   let activeToolContext = null;
   let previousBodyOverflow = '';
 
@@ -45,6 +52,192 @@
 
   function sanitizeKey(value) {
     return String(value).replace(/[^a-zA-Z0-9_-]/g, '-');
+  }
+
+  function sanitizeFilenameSegment(value) {
+    return String(value)
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_-]/g, '');
+  }
+
+  function toISOStringWithTZ(date) {
+    return date.toISOString();
+  }
+
+  function formatTimestampForFilename(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+  }
+
+  function formatDuration(ms) {
+    if (!Number.isFinite(ms)) return 'n/a';
+    const seconds = ms / 1000;
+    if (seconds < 1) {
+      return `${ms.toFixed(0)} ms`;
+    }
+    if (seconds < 60) {
+      return `${seconds.toFixed(2)} s`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    const remaining = seconds % 60;
+    return `${minutes}m ${remaining.toFixed(1)}s`;
+  }
+
+  function downloadTextFile(filename, content, mime = 'text/plain;charset=utf-8') {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function formatAsCodeBlock(value, fallbackLanguage = 'json') {
+    let language = fallbackLanguage;
+    let text;
+    if (value === undefined || value === null) {
+      text = '{}';
+    } else if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        text = JSON.stringify(parsed, null, 2);
+      } catch (_err) {
+        language = '';
+        text = value;
+      }
+    } else {
+      try {
+        text = JSON.stringify(value, null, 2);
+      } catch (_err) {
+        language = '';
+        text = String(value);
+      }
+    }
+    return `\`\`\`${language}\n${text}\n\`\`\``;
+  }
+
+  function updateSaveButtons() {
+    if (!currentConfig) {
+      saveJsonButton.disabled = true;
+      saveTomlButton.disabled = true;
+      return;
+    }
+    saveJsonButton.disabled = currentConfig.format === 'json';
+    saveTomlButton.disabled = currentConfig.format === 'toml';
+  }
+
+  function setLoadingConfig(state) {
+    isLoadingConfig = state;
+    if (state) {
+      loadJsonButton.disabled = true;
+      loadTomlButton.disabled = true;
+      saveJsonButton.disabled = true;
+      saveTomlButton.disabled = true;
+    } else {
+      loadJsonButton.disabled = false;
+      loadTomlButton.disabled = false;
+      updateSaveButtons();
+    }
+  }
+
+  function describeConfigStatus(fileName, format, count) {
+    const parts = [];
+    if (fileName) {
+      parts.push(fileName);
+    } else {
+      parts.push('Loaded config');
+    }
+    if (typeof count === 'number') {
+      parts.push(`${count} server${count === 1 ? '' : 's'}`);
+    }
+    if (format) {
+      parts.push(format.toUpperCase());
+    }
+    return parts.join(' • ');
+  }
+
+  function setCurrentConfig(configObj, fileName) {
+    currentConfig = configObj;
+    currentConfigFileName = fileName || '';
+    updateSaveButtons();
+    const count = Array.isArray(configObj?.servers) ? configObj.servers.length : 0;
+    configFileNameLabel.textContent = describeConfigStatus(fileName, configObj?.format, count);
+  }
+
+  function clearCurrentConfigStatus(message = 'No file selected') {
+    currentConfig = null;
+    currentConfigFileName = '';
+    configFileNameLabel.textContent = message;
+    updateSaveButtons();
+  }
+
+  function generateToolReport(reportData) {
+    const {
+      serverName,
+      toolName,
+      spec,
+      args,
+      startedAt,
+      finishedAt,
+      durationMs,
+      success,
+      response,
+      error,
+      handshake
+    } = reportData;
+    const lines = [];
+    lines.push('# MCP Tool Call Report');
+    lines.push('');
+    lines.push(`- **Server Name:** ${serverName}`);
+    lines.push(`- **Tool:** ${toolName}`);
+    lines.push(`- **Mode:** ${spec?.mode ?? 'unknown'}`);
+    lines.push(`- **Call Started:** ${startedAt}`);
+    lines.push(`- **Response Received:** ${finishedAt}`);
+    const hasDuration = typeof durationMs === 'number' && Number.isFinite(durationMs);
+    const durationDisplay = hasDuration ? formatDuration(durationMs) : 'n/a';
+    const durationExact = hasDuration ? `${durationMs.toFixed(0)} ms` : 'n/a';
+    lines.push(`- **Duration:** ${durationDisplay}${hasDuration ? ` (${durationExact})` : ''}`);
+    lines.push(`- **Result:** ${success ? 'Success' : 'Failure'}`);
+    lines.push('');
+    if (handshake) {
+      lines.push('## Handshake');
+      const summary = {
+        transport: handshake.transport ?? null,
+        protocolVersion: handshake.protocolVersion ?? null,
+        serverInfo: handshake.serverInfo ?? null,
+        capabilities: handshake.capabilities ?? null,
+        instructions: handshake.instructions ?? null
+      };
+      lines.push(formatAsCodeBlock(summary));
+      lines.push('');
+    }
+    lines.push('## Server Configuration');
+    lines.push(formatAsCodeBlock(spec));
+    lines.push('');
+    lines.push('## Tool Arguments');
+    lines.push(formatAsCodeBlock(args ?? {}));
+    lines.push('');
+    lines.push('## Output');
+    if (success) {
+      lines.push(formatAsCodeBlock(response ?? {}));
+    } else {
+      const errorBlock = {
+        kind: error?.kind ?? 'unknown',
+        advice: error?.advice ?? null,
+        details: error?.details ?? error ?? null
+      };
+      lines.push(formatAsCodeBlock(errorBlock));
+    }
+    return lines.join('\n');
   }
 
   function parseCommandLine(line) {
@@ -183,7 +376,9 @@
       const testState = toolTests[tool.name];
       const statusBadge = renderToolTestStatus(testState);
       html += `<li><code>${escapeHtml(tool.name)}</code>${description}`;
-      html += ` <button class="tool-test-button" data-tool="${escapeAttribute(tool.name)}">Test</button>`;
+      html += ` <button class="tool-test-button" type="button" data-tool="${escapeAttribute(
+        tool.name
+      )}" data-entry-id="${entry.id}">Test</button>`;
       if (statusBadge) {
         html += ` ${statusBadge}`;
       }
@@ -316,12 +511,6 @@
 
       detailsDiv.innerHTML = detailSections.filter(Boolean).join('');
 
-      detailsDiv.querySelectorAll('.tool-test-button').forEach((button) => {
-        button.addEventListener('click', () => {
-          openToolModal(entry, button.dataset.tool);
-        });
-      });
-
       toggleBtn.addEventListener('click', () => {
         const isOpen = toggleBtn.classList.toggle('open');
         detailsDiv.classList.toggle('hidden', !isOpen);
@@ -330,6 +519,25 @@
       serversList.appendChild(card);
     });
   }
+
+  serversList.addEventListener('click', (event) => {
+    const button = event.target.closest('.tool-test-button');
+    if (!button) {
+      return;
+    }
+    const entryId = Number(button.dataset.entryId);
+    const toolName = button.dataset.tool;
+    if (!toolName) {
+      alert('Unable to determine tool name for this button.');
+      return;
+    }
+    const entry = servers.find((item) => item.id === entryId);
+    if (!entry) {
+      alert('Unable to locate server entry for this tool.');
+      return;
+    }
+    openToolModal(entry, toolName);
+  });
 
   function applyLastArgs(context) {
     const lastArgs = context.lastArgs ?? {};
@@ -464,6 +672,7 @@
     toolModalBody.innerHTML = '';
     toolModalSubmit.disabled = false;
     toolModalSubmit.textContent = 'Run Tool';
+    toolModalReport.disabled = true;
     setModalResult(null);
     document.body.style.overflow = previousBodyOverflow;
   }
@@ -478,6 +687,7 @@
       <div class="modal-form" id="tool-modal-form"></div>
       <div class="modal-result hidden" id="tool-modal-result"></div>
     `;
+    toolModalReport.disabled = true;
     renderArgumentFields(context);
     setModalResult(null);
   }
@@ -501,9 +711,21 @@
       entry,
       tool,
       argSpecs,
-      lastArgs: { ...lastArgs }
+      lastArgs: { ...lastArgs },
+      reportData: null
     };
     renderToolModalContent(activeToolContext);
+    const previous = entry.toolTests?.[tool.name];
+    if (previous) {
+      if (previous.totalResult) {
+        setModalResult(previous.totalResult);
+        toolModalReport.disabled = !previous.reportData;
+      }
+      if (previous.reportData) {
+        activeToolContext.reportData = previous.reportData;
+        toolModalReport.disabled = false;
+      }
+    }
     previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     modalBackdrop.classList.remove('hidden');
@@ -593,6 +815,8 @@
       return;
     }
     const { entry, tool } = activeToolContext;
+    const startedAtDate = new Date();
+    const startedAtIso = toISOStringWithTZ(startedAtDate);
     toolModalSubmit.disabled = true;
     toolModalSubmit.textContent = 'Running…';
     const runningContainer = document.getElementById('tool-modal-result');
@@ -608,6 +832,10 @@
         body: JSON.stringify({ spec: entry.spec, toolName: tool.name, toolArgs: args })
       });
       const data = await response.json();
+      const finishedAtDate = new Date();
+      const finishedAtIso = toISOStringWithTZ(finishedAtDate);
+      const durationMs = finishedAtDate.getTime() - startedAtDate.getTime();
+      const handshakeInfo = data.handshake ?? entry.handshake;
       if (!response.ok) {
         throw new Error(data?.error?.details || `HTTP ${response.status}`);
       }
@@ -617,7 +845,28 @@
       if (data.ok) {
         entry.toolTests[tool.name] = { status: 'ok', output: data.output, lastArgs: args };
         activeToolContext.lastArgs = args;
-        setModalResult({ ok: true, output: data.output });
+        const resultPayload = { ok: true, output: data.output };
+        setModalResult(resultPayload);
+        const reportData = {
+          serverName: entry.serverName || entry.displayName || 'unknown',
+          toolName: tool.name,
+          spec: JSON.parse(JSON.stringify(entry.spec ?? {})),
+          args,
+          startedAt: startedAtIso,
+          finishedAt: finishedAtIso,
+          durationMs,
+          success: true,
+          response: data.output,
+          error: null,
+          handshake: handshakeInfo
+        };
+        entry.toolTests[tool.name].reportData = reportData;
+        entry.toolTests[tool.name].totalResult = resultPayload;
+        entry.toolTests[tool.name].startedAt = startedAtIso;
+        entry.toolTests[tool.name].finishedAt = finishedAtIso;
+        entry.toolTests[tool.name].durationMs = durationMs;
+        activeToolContext.reportData = reportData;
+        toolModalReport.disabled = false;
       } else {
         entry.toolTests[tool.name] = {
           status: 'error',
@@ -625,10 +874,34 @@
           lastArgs: args
         };
         activeToolContext.lastArgs = args;
-        setModalResult({ ok: false, error: data.error });
+        const resultPayload = { ok: false, error: data.error };
+        setModalResult(resultPayload);
+        const reportData = {
+          serverName: entry.serverName || entry.displayName || 'unknown',
+          toolName: tool.name,
+          spec: JSON.parse(JSON.stringify(entry.spec ?? {})),
+          args,
+          startedAt: startedAtIso,
+          finishedAt: finishedAtIso,
+          durationMs,
+          success: false,
+          response: null,
+          error: data.error,
+          handshake: handshakeInfo
+        };
+        entry.toolTests[tool.name].reportData = reportData;
+        entry.toolTests[tool.name].totalResult = resultPayload;
+        entry.toolTests[tool.name].startedAt = startedAtIso;
+        entry.toolTests[tool.name].finishedAt = finishedAtIso;
+        entry.toolTests[tool.name].durationMs = durationMs;
+        activeToolContext.reportData = reportData;
+        toolModalReport.disabled = false;
       }
       renderServers();
     } catch (err) {
+      const finishedAtDate = new Date();
+      const finishedAtIso = toISOStringWithTZ(finishedAtDate);
+      const durationMs = finishedAtDate.getTime() - startedAtDate.getTime();
       entry.toolTests = entry.toolTests || {};
       entry.toolTests[tool.name] = {
         status: 'error',
@@ -636,7 +909,28 @@
         lastArgs: args
       };
       activeToolContext.lastArgs = args;
-      setModalResult({ ok: false, error: { kind: 'network_error', details: err.message } });
+      const resultPayload = { ok: false, error: { kind: 'network_error', details: err.message } };
+      setModalResult(resultPayload);
+      const reportData = {
+        serverName: entry.serverName || entry.displayName || 'unknown',
+        toolName: tool.name,
+        spec: JSON.parse(JSON.stringify(entry.spec ?? {})),
+        args,
+        startedAt: startedAtIso,
+        finishedAt: finishedAtIso,
+        durationMs,
+        success: false,
+        response: null,
+        error: { kind: 'network_error', details: err.message },
+        handshake: entry.handshake
+      };
+      entry.toolTests[tool.name].reportData = reportData;
+      entry.toolTests[tool.name].totalResult = resultPayload;
+      entry.toolTests[tool.name].startedAt = startedAtIso;
+      entry.toolTests[tool.name].finishedAt = finishedAtIso;
+      entry.toolTests[tool.name].durationMs = durationMs;
+      activeToolContext.reportData = reportData;
+      toolModalReport.disabled = false;
       renderServers();
     } finally {
       toolModalSubmit.disabled = false;
@@ -644,16 +938,15 @@
     }
   }
 
-  async function diagnoseConfigContent(text, fileName) {
+  async function diagnoseConfigContent(text, fileName, format) {
     if (!text) return;
-    isLoadingConfig = true;
-    loadConfigButton.disabled = true;
+    setLoadingConfig(true);
     configFileNameLabel.textContent = `Loading ${fileName}…`;
     try {
       const response = await fetch('/api/config/diagnose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ configText: text })
+        body: JSON.stringify({ configText: text, configFormat: format })
       });
       const data = await response.json();
       if (!response.ok || data.ok === false) {
@@ -687,41 +980,101 @@
           toolTests: {}
         });
       });
-      configFileNameLabel.textContent = `${fileName} — ${data.servers.length} server${data.servers.length === 1 ? '' : 's'}`;
+      if (data.config) {
+        setCurrentConfig(data.config, fileName);
+      } else {
+        currentConfig = null;
+        updateSaveButtons();
+        configFileNameLabel.textContent = describeConfigStatus(fileName, data.format, data.servers.length);
+      }
       renderServers();
     } catch (err) {
       alert(`Failed to process ${fileName}: ${err.message}`);
-      configFileNameLabel.textContent = `${fileName} — failed`;
+      clearCurrentConfigStatus(`${fileName} — failed`);
     } finally {
-      isLoadingConfig = false;
-      loadConfigButton.disabled = false;
-      configFileInput.value = '';
+      setLoadingConfig(false);
+      configJsonInput.value = '';
+      configTomlInput.value = '';
     }
   }
 
-  async function handleConfigFile(file) {
+  async function handleConfigFile(file, format) {
     if (!file) return;
     try {
       const text = await file.text();
-      await diagnoseConfigContent(text, file.name);
+      await diagnoseConfigContent(text, file.name, format);
     } catch (err) {
       alert(`Unable to read file: ${err.message}`);
       configFileNameLabel.textContent = `Failed to read ${file.name}`;
     }
   }
 
+  async function exportCurrentConfig(targetFormat) {
+    if (!currentConfig) {
+      alert('Load a configuration before saving.');
+      return;
+    }
+    try {
+      const response = await fetch('/api/config/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: currentConfig, targetFormat })
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok === false) {
+        const message = data?.error?.details || `Unable to export config (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+      const extension = targetFormat === 'json' ? 'json' : 'toml';
+      const baseName =
+        currentConfigFileName && currentConfigFileName.includes('.')
+          ? currentConfigFileName.replace(/\.[^.]+$/, '')
+          : currentConfigFileName || 'mcp-config';
+      const mime = targetFormat === 'json' ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8';
+      const filename = `${baseName}.${extension}`;
+      downloadTextFile(filename, data.content, mime);
+    } catch (err) {
+      alert(`Failed to export config: ${err.message}`);
+    }
+  }
+
   modeSelect.addEventListener('change', updateFormVisibility);
   updateFormVisibility();
+  updateSaveButtons();
 
-  loadConfigButton.addEventListener('click', () => {
+  loadJsonButton.addEventListener('click', () => {
     if (isLoadingConfig) return;
-    configFileInput.click();
+    configJsonInput.click();
   });
 
-  configFileInput.addEventListener('change', () => {
-    const [file] = configFileInput.files;
+  loadTomlButton.addEventListener('click', () => {
+    if (isLoadingConfig) return;
+    configTomlInput.click();
+  });
+
+  configJsonInput.addEventListener('change', () => {
+    const [file] = configJsonInput.files;
     if (file) {
-      void handleConfigFile(file);
+      void handleConfigFile(file, 'json');
+    }
+  });
+
+  configTomlInput.addEventListener('change', () => {
+    const [file] = configTomlInput.files;
+    if (file) {
+      void handleConfigFile(file, 'toml');
+    }
+  });
+
+  saveJsonButton.addEventListener('click', () => {
+    if (!saveJsonButton.disabled) {
+      void exportCurrentConfig('json');
+    }
+  });
+
+  saveTomlButton.addEventListener('click', () => {
+    if (!saveTomlButton.disabled) {
+      void exportCurrentConfig('toml');
     }
   });
 
@@ -799,6 +1152,28 @@
   });
 
   toolModalSubmit.addEventListener('click', submitToolModal);
+  toolModalReport.addEventListener('click', () => {
+    if (!activeToolContext) {
+      alert('No tool execution to report.');
+      return;
+    }
+    const context = activeToolContext;
+    const stored =
+      context.reportData ||
+      context.entry?.toolTests?.[context.tool.name]?.reportData ||
+      null;
+    if (!stored) {
+      alert('Run the tool before generating a report.');
+      return;
+    }
+    const finishedDate = new Date(stored.finishedAt);
+    const timestamp = formatTimestampForFilename(finishedDate);
+    const serverSegment = sanitizeFilenameSegment(stored.serverName || 'server');
+    const toolSegment = sanitizeFilenameSegment(stored.toolName || 'tool');
+    const filename = `MCPDiagnois_Report_${timestamp}_${serverSegment}_${toolSegment}.md`;
+    const content = generateToolReport(stored);
+    downloadTextFile(filename, content, 'text/markdown;charset=utf-8');
+  });
   toolModalClose.addEventListener('click', closeToolModal);
   modalBackdrop.addEventListener('click', closeToolModal);
   window.addEventListener('keydown', (event) => {

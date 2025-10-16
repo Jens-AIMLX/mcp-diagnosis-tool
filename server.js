@@ -12,7 +12,14 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
-const { diagnose, parseMcpConfigContent, diagnoseConfigEntries, callTool } = require('./mcpDoctor');
+const {
+  diagnose,
+  parseMcpConfigContent,
+  diagnoseConfigEntries,
+  serializeMcpConfigToJson,
+  serializeMcpConfigToToml,
+  callTool
+} = require('./mcpDoctor');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,17 +52,39 @@ app.post('/api/diagnose', async (req, res) => {
 
 // API route for diagnosing all servers within an uploaded MCP config
 app.post('/api/config/diagnose', async (req, res) => {
-  const { configText, config } = req.body || {};
+  const { configText, config, configFormat } = req.body || {};
   if (!configText && !config) {
     return res.status(400).json({ error: 'configText (string) or config (object) is required' });
   }
   try {
-    const { servers } = parseMcpConfigContent(configText ?? config);
-    const results = await diagnoseConfigEntries(servers);
-    res.json({ ok: true, servers: results });
+    const normalized = parseMcpConfigContent(configText ?? config, configFormat);
+    const results = await diagnoseConfigEntries(normalized);
+    res.json({ ok: true, format: normalized.format, config: normalized, servers: results });
   } catch (err) {
     const status = err.code && err.code.startsWith('CONFIG_') ? 400 : 500;
     res.status(status).json({ ok: false, error: { kind: 'config_error', details: err.message } });
+  }
+});
+
+// API route for converting/saving configs
+app.post('/api/config/export', async (req, res) => {
+  const { config, targetFormat } = req.body || {};
+  if (!config || typeof config !== 'object' || !targetFormat) {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'config and targetFormat are required' } });
+  }
+  try {
+    let content;
+    if (targetFormat === 'json') {
+      content = serializeMcpConfigToJson(config);
+    } else if (targetFormat === 'toml') {
+      content = serializeMcpConfigToToml(config);
+    } else {
+      return res.status(400).json({ ok: false, error: { kind: 'unsupported_format', details: 'targetFormat must be "json" or "toml"' } });
+    }
+    res.json({ ok: true, format: targetFormat, content });
+  } catch (err) {
+    const status = err.code && err.code.startsWith('CONFIG_') ? 400 : 500;
+    res.status(status).json({ ok: false, error: { kind: 'config_export_error', details: err.message } });
   }
 });
 
