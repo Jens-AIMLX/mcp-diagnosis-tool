@@ -16,6 +16,7 @@ const {
   diagnose,
   parseMcpConfigContent,
   diagnoseConfigEntries,
+  mergeNormalizedConfig,
   serializeMcpConfigToJson,
   serializeMcpConfigToToml,
   callTool
@@ -85,6 +86,41 @@ app.post('/api/config/export', async (req, res) => {
   } catch (err) {
     const status = err.code && err.code.startsWith('CONFIG_') ? 400 : 500;
     res.status(status).json({ ok: false, error: { kind: 'config_export_error', details: err.message } });
+  }
+});
+
+// API route for merging a single server config into the current config
+app.post('/api/config/add-server', async (req, res) => {
+  const { baseConfig, additionText, additionFormat } = req.body || {};
+  if (!additionText || typeof additionText !== 'string') {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'additionText (string) is required' } });
+  }
+  try {
+    const addition = parseMcpConfigContent(additionText, additionFormat);
+    if (!addition.servers.length) {
+      const error = new Error('Provided config did not contain any MCP servers.');
+      error.code = 'CONFIG_SCHEMA_ERROR';
+      throw error;
+    }
+    let baseNormalized = null;
+    if (baseConfig && typeof baseConfig === 'object') {
+      baseNormalized = JSON.parse(JSON.stringify(baseConfig));
+      if (!Array.isArray(baseNormalized.servers)) {
+        baseNormalized.servers = [];
+      }
+      if (!baseNormalized.topLevel || typeof baseNormalized.topLevel !== 'object') {
+        baseNormalized.topLevel = {};
+      }
+      if (!baseNormalized.format) {
+        baseNormalized.format = addition.format ?? 'json';
+      }
+    }
+    const merged = mergeNormalizedConfig(baseNormalized, addition);
+    const results = await diagnoseConfigEntries(merged);
+    res.json({ ok: true, config: merged, servers: results });
+  } catch (err) {
+    const status = err.code && err.code.startsWith('CONFIG_') ? 400 : 500;
+    res.status(status).json({ ok: false, error: { kind: 'config_merge_error', details: err.message } });
   }
 });
 

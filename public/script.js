@@ -15,6 +15,8 @@
 
   const loadJsonButton = document.getElementById('load-json-btn');
   const loadTomlButton = document.getElementById('load-toml-btn');
+  const addJsonServerButton = document.getElementById('add-json-server-btn');
+  const addTomlServerButton = document.getElementById('add-toml-server-btn');
   const saveJsonButton = document.getElementById('save-json-btn');
   const saveTomlButton = document.getElementById('save-toml-btn');
   const configJsonInput = document.getElementById('config-json-input');
@@ -28,6 +30,12 @@
   const toolModalSubmit = document.getElementById('tool-modal-submit');
   const toolModalReport = document.getElementById('tool-modal-report');
   const toolModalClose = document.getElementById('tool-modal-close');
+  const configModal = document.getElementById('config-modal');
+  const configModalTitle = document.getElementById('config-modal-title');
+  const configModalDesc = document.getElementById('config-modal-desc');
+  const configModalInput = document.getElementById('config-modal-input');
+  const configModalMergeButton = document.getElementById('config-modal-merge');
+  const configModalClose = document.getElementById('config-modal-close');
 
   const servers = [];
   let isLoadingConfig = false;
@@ -35,6 +43,7 @@
   let currentConfigFileName = '';
   let activeToolContext = null;
   let previousBodyOverflow = '';
+  let activeConfigFormat = null;
 
   function escapeHtml(value) {
     if (value === null || value === undefined) return '';
@@ -140,11 +149,15 @@
     if (state) {
       loadJsonButton.disabled = true;
       loadTomlButton.disabled = true;
+      addJsonServerButton.disabled = true;
+      addTomlServerButton.disabled = true;
       saveJsonButton.disabled = true;
       saveTomlButton.disabled = true;
     } else {
       loadJsonButton.disabled = false;
       loadTomlButton.disabled = false;
+      addJsonServerButton.disabled = false;
+      addTomlServerButton.disabled = false;
       updateSaveButtons();
     }
   }
@@ -165,12 +178,22 @@
     return parts.join(' • ');
   }
 
+  function refreshConfigStatusLabel() {
+    if (currentConfig) {
+      const count = Array.isArray(currentConfig.servers) ? currentConfig.servers.length : 0;
+      configFileNameLabel.textContent = describeConfigStatus(currentConfigFileName, currentConfig.format, count);
+    } else {
+      configFileNameLabel.textContent = 'No file selected';
+    }
+  }
+
   function setCurrentConfig(configObj, fileName) {
-    currentConfig = configObj;
-    currentConfigFileName = fileName || '';
+    currentConfig = configObj ? JSON.parse(JSON.stringify(configObj)) : null;
+    if (fileName !== undefined) {
+      currentConfigFileName = fileName || '';
+    }
     updateSaveButtons();
-    const count = Array.isArray(configObj?.servers) ? configObj.servers.length : 0;
-    configFileNameLabel.textContent = describeConfigStatus(fileName, configObj?.format, count);
+    refreshConfigStatusLabel();
   }
 
   function clearCurrentConfigStatus(message = 'No file selected') {
@@ -178,6 +201,48 @@
     currentConfigFileName = '';
     configFileNameLabel.textContent = message;
     updateSaveButtons();
+  }
+
+  function replaceConfigServers(configObj, serverResults, fileName) {
+    const label = fileName ?? currentConfigFileName ?? '';
+    setCurrentConfig(configObj, label);
+    for (let i = servers.length - 1; i >= 0; i -= 1) {
+      if (servers[i].source === 'config') {
+        servers.splice(i, 1);
+      }
+    }
+    const baseId = Date.now();
+    (serverResults || []).forEach((item, index) => {
+      const spec = item.spec ? JSON.parse(JSON.stringify(item.spec)) : {};
+      const result = item.result ? JSON.parse(JSON.stringify(item.result)) : {};
+      const status = result.ok ? 'ok' : 'error';
+      const handshake = result.handshake ?? null;
+      const displayName = computeDisplayName(spec, item.name);
+      servers.push({
+        id: baseId + index,
+        source: 'config',
+        serverName: item.name,
+        displayName,
+        spec,
+        status,
+        result: result.ok ? result : null,
+        error: result.ok ? null : result.error,
+        handshake,
+        toolTests: {}
+      });
+    });
+    refreshConfigStatusLabel();
+    renderServers();
+  }
+
+  function computeDisplayName(spec, fallbackName) {
+    if (spec.mode === 'http') {
+      return (spec.url || fallbackName || '').trim() || fallbackName || 'HTTP server';
+    }
+    const command = spec.command || fallbackName || '';
+    const args = Array.isArray(spec.args) && spec.args.length ? ` ${spec.args.join(' ')}` : '';
+    const combined = `${command}${args}`.trim();
+    return combined || fallbackName || 'STDIO server';
   }
 
   function generateToolReport(reportData) {
@@ -953,41 +1018,8 @@
         const message = data?.error?.details || `Unable to diagnose config (HTTP ${response.status})`;
         throw new Error(message);
       }
-      for (let i = servers.length - 1; i >= 0; i -= 1) {
-        if (servers[i].source === 'config') {
-          servers.splice(i, 1);
-        }
-      }
-      data.servers.forEach((item, index) => {
-        const spec = item.spec || {};
-        const result = item.result || {};
-        const status = result.ok ? 'ok' : 'error';
-        const handshake = result.handshake ?? null;
-        const displayName =
-          spec.mode === 'http'
-            ? spec.url ?? item.name
-            : `${spec.command ?? item.name}${Array.isArray(spec.args) && spec.args.length ? ` ${spec.args.join(' ')}` : ''}`;
-        servers.push({
-          id: Date.now() + index,
-          source: 'config',
-          serverName: item.name,
-          displayName,
-          spec,
-          status,
-          result: result.ok ? result : null,
-          error: result.ok ? null : result.error,
-          handshake,
-          toolTests: {}
-        });
-      });
-      if (data.config) {
-        setCurrentConfig(data.config, fileName);
-      } else {
-        currentConfig = null;
-        updateSaveButtons();
-        configFileNameLabel.textContent = describeConfigStatus(fileName, data.format, data.servers.length);
-      }
-      renderServers();
+      const configObj = data.config ?? { format: data.format, topLevel: {}, servers: [] };
+      replaceConfigServers(configObj, data.servers || [], fileName);
     } catch (err) {
       alert(`Failed to process ${fileName}: ${err.message}`);
       clearCurrentConfigStatus(`${fileName} — failed`);
@@ -1038,6 +1070,95 @@
     }
   }
 
+  function openConfigModal(format) {
+    if (!toolModal.classList.contains('hidden')) {
+      closeToolModal();
+    }
+    activeConfigFormat = format;
+    configModalTitle.textContent = format === 'toml' ? 'Add MCP Server (TOML)' : 'Add MCP Server (JSON)';
+    configModalDesc.textContent =
+      format === 'toml'
+        ? 'Paste a TOML snippet that defines one or more [mcp_servers.*] tables to merge into the current configuration.'
+        : 'Paste a JSON snippet containing an mcpServers object with one or more server definitions to merge into the current configuration.';
+    configModalInput.value = '';
+    configModalMergeButton.disabled = false;
+    configModalMergeButton.textContent = 'Merge';
+    addJsonServerButton.disabled = true;
+    addTomlServerButton.disabled = true;
+    if (modalBackdrop.classList.contains('hidden')) {
+      previousBodyOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      modalBackdrop.classList.remove('hidden');
+    }
+    configModal.classList.remove('hidden');
+    setTimeout(() => {
+      configModalInput.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  function closeConfigModal() {
+    if (configModal.classList.contains('hidden')) {
+      return;
+    }
+    configModal.classList.add('hidden');
+    activeConfigFormat = null;
+    configModalMergeButton.disabled = false;
+    configModalMergeButton.textContent = 'Merge';
+    configModalInput.value = '';
+    if (!isLoadingConfig) {
+      addJsonServerButton.disabled = false;
+      addTomlServerButton.disabled = false;
+    }
+    if (toolModal.classList.contains('hidden')) {
+      modalBackdrop.classList.add('hidden');
+      document.body.style.overflow = previousBodyOverflow;
+    }
+  }
+
+  async function performAddServer(format, snippet) {
+    const trimmed = snippet.trim();
+    if (!trimmed) {
+      alert('No configuration provided.');
+      return;
+    }
+    const baseConfigPayload = currentConfig ? JSON.parse(JSON.stringify(currentConfig)) : null;
+    const previousLabel = configFileNameLabel.textContent;
+    configModalMergeButton.disabled = true;
+    configModalMergeButton.textContent = 'Merging…';
+    try {
+      setLoadingConfig(true);
+      configFileNameLabel.textContent = 'Merging server configuration…';
+      const response = await fetch('/api/config/add-server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseConfig: baseConfigPayload, additionText: trimmed, additionFormat: format })
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok === false) {
+        const message = data?.error?.details || `Unable to add server (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+      const label = currentConfigFileName || (format === 'toml' ? 'config.toml' : 'mcp.json');
+      replaceConfigServers(data.config, data.servers || [], label);
+      closeConfigModal();
+    } catch (err) {
+      alert(`Failed to add server: ${err.message}`);
+      configModalMergeButton.disabled = false;
+      configModalMergeButton.textContent = 'Merge';
+      if (currentConfig) {
+        refreshConfigStatusLabel();
+      } else {
+        configFileNameLabel.textContent = previousLabel;
+      }
+    } finally {
+      setLoadingConfig(false);
+      if (!configModal.classList.contains('hidden')) {
+        addJsonServerButton.disabled = true;
+        addTomlServerButton.disabled = true;
+      }
+    }
+  }
+
   modeSelect.addEventListener('change', updateFormVisibility);
   updateFormVisibility();
   updateSaveButtons();
@@ -1050,6 +1171,16 @@
   loadTomlButton.addEventListener('click', () => {
     if (isLoadingConfig) return;
     configTomlInput.click();
+  });
+
+  addJsonServerButton.addEventListener('click', () => {
+    if (isLoadingConfig) return;
+    openConfigModal('json');
+  });
+
+  addTomlServerButton.addEventListener('click', () => {
+    if (isLoadingConfig) return;
+    openConfigModal('toml');
   });
 
   configJsonInput.addEventListener('change', () => {
@@ -1175,10 +1306,28 @@
     downloadTextFile(filename, content, 'text/markdown;charset=utf-8');
   });
   toolModalClose.addEventListener('click', closeToolModal);
-  modalBackdrop.addEventListener('click', closeToolModal);
+  configModalClose.addEventListener('click', closeConfigModal);
+  configModalMergeButton.addEventListener('click', () => {
+    if (!activeConfigFormat) {
+      alert('No target format selected.');
+      return;
+    }
+    void performAddServer(activeConfigFormat, configModalInput.value);
+  });
+  modalBackdrop.addEventListener('click', () => {
+    if (!configModal.classList.contains('hidden')) {
+      closeConfigModal();
+    } else if (!toolModal.classList.contains('hidden')) {
+      closeToolModal();
+    }
+  });
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
-      closeToolModal();
+      if (!configModal.classList.contains('hidden')) {
+        closeConfigModal();
+      } else if (!toolModal.classList.contains('hidden')) {
+        closeToolModal();
+      }
     }
   });
 })();

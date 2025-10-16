@@ -547,6 +547,7 @@ module.exports = {
   diagnoseConfigFile,
   parseMcpConfigContent,
   diagnoseConfigEntries,
+  mergeNormalizedConfig,
   serializeMcpConfigToJson,
   serializeMcpConfigToToml,
   callTool
@@ -885,4 +886,53 @@ function validateNormalizedConfig(config) {
       throw new Error('Server entry missing name.');
     }
   });
+}
+
+function mergeNormalizedConfig(baseConfig, additionConfig) {
+  if (!additionConfig || typeof additionConfig !== 'object') {
+    throw new Error('Addition config must be an object.');
+  }
+  const base = baseConfig ? JSON.parse(JSON.stringify(baseConfig)) : { format: additionConfig.format, topLevel: {}, servers: [] };
+  if (!Array.isArray(base.servers)) {
+    base.servers = [];
+  }
+  if (!base.topLevel || typeof base.topLevel !== 'object' || Array.isArray(base.topLevel)) {
+    base.topLevel = {};
+  }
+  validateNormalizedConfig(base);
+  validateNormalizedConfig(additionConfig);
+  if (!additionConfig.servers.length) {
+    throw new Error('No MCP servers provided in addition config.');
+  }
+
+  const mergedTopLevel = deepClone(base.topLevel) || {};
+  if (additionConfig.topLevel && typeof additionConfig.topLevel === 'object' && !Array.isArray(additionConfig.topLevel)) {
+    Object.assign(mergedTopLevel, deepClone(additionConfig.topLevel));
+  }
+
+  const serverMap = new Map();
+  (base.servers || []).forEach((server) => {
+    serverMap.set(server.name, deepClone(server));
+  });
+  (additionConfig.servers || []).forEach((server) => {
+    serverMap.set(server.name, deepClone(server));
+  });
+
+  const mergedServers = [];
+  (base.servers || []).forEach((server) => {
+    const merged = serverMap.get(server.name);
+    if (merged) {
+      mergedServers.push(merged);
+      serverMap.delete(server.name);
+    }
+  });
+  serverMap.forEach((value) => {
+    mergedServers.push(value);
+  });
+
+  return {
+    format: base.format ?? additionConfig.format ?? 'json',
+    topLevel: mergedTopLevel,
+    servers: mergedServers
+  };
 }

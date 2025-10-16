@@ -466,6 +466,26 @@ section h2 {
   background-color: #2b6cb0;
 }
 
+#config-modal-merge {
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: none;
+  background-color: #2c5282;
+  color: #f8fafc;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+#config-modal-merge:disabled {
+  cursor: progress;
+  background-color: #2a4365;
+}
+
+#config-modal-merge:hover:not(:disabled) {
+  background-color: #2b6cb0;
+}
+
 .modal-actions .secondary {
   padding: 8px 16px;
   border-radius: 4px;

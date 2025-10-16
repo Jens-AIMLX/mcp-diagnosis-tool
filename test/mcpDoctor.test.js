@@ -9,6 +9,7 @@ const {
   diagnoseConfigFile,
   parseMcpConfigContent,
   diagnoseConfigEntries,
+  mergeNormalizedConfig,
   serializeMcpConfigToJson,
   serializeMcpConfigToToml
 } = require('../mcpDoctor');
@@ -238,4 +239,58 @@ test('serializeMcpConfigToToml round-trips normalized config', () => {
   assert.strictEqual(server.mode, 'http');
   assert.strictEqual(server.url, 'https://example.com/mcp');
   assert.strictEqual(server.bearerTokenEnvVar, 'HTTP_TOKEN');
+});
+
+test('mergeNormalizedConfig merges servers and top-level fields', () => {
+  const baseJson = {
+    experimental_use_rmcp_client: false,
+    mcpServers: {
+      core: {
+        command: 'node',
+        args: ['server.js']
+      }
+    }
+  };
+  const additionToml = `experimental_use_rmcp_client = true
+
+[mcp_servers.logger]
+url = "https://example.com/logger"
+`;
+  const base = parseMcpConfigContent(baseJson, 'json');
+  const addition = parseMcpConfigContent(additionToml, 'toml');
+  const merged = mergeNormalizedConfig(base, addition);
+  assert.strictEqual(merged.format, 'json');
+  assert.strictEqual(merged.topLevel.experimental_use_rmcp_client, true);
+  assert.strictEqual(merged.servers.length, 2);
+  const logger = merged.servers.find((s) => s.name === 'logger');
+  assert.ok(logger);
+  assert.strictEqual(logger.mode, 'http');
+  assert.strictEqual(logger.url, 'https://example.com/logger');
+});
+
+test('mergeNormalizedConfig replaces existing server definitions and handles empty base', () => {
+  const additionToml = `[mcp_servers.shared]
+command = "python"
+args = ["tool.py"]
+`;
+  const baseJson = {
+    mcpServers: {
+      shared: {
+        command: 'node',
+        args: ['old.js']
+      }
+    }
+  };
+  const base = parseMcpConfigContent(baseJson, 'json');
+  const addition = parseMcpConfigContent(additionToml, 'toml');
+  const merged = mergeNormalizedConfig(base, addition);
+  const shared = merged.servers.find((s) => s.name === 'shared');
+  assert.ok(shared);
+  assert.strictEqual(shared.command, 'python');
+  assert.deepEqual(shared.args, ['tool.py']);
+
+  const mergedFromNull = mergeNormalizedConfig(null, addition);
+  assert.strictEqual(mergedFromNull.format, 'toml');
+  assert.strictEqual(mergedFromNull.servers.length, 1);
+  assert.strictEqual(mergedFromNull.servers[0].command, 'python');
 });

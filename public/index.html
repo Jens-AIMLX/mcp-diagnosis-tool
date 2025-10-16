@@ -19,6 +19,8 @@
         <div class="config-actions">
           <button type="button" id="load-json-btn">Load standard mcp.json</button>
           <button type="button" id="load-toml-btn">Load mcp.toml</button>
+          <button type="button" id="add-json-server-btn" class="secondary">Add server (JSON)</button>
+          <button type="button" id="add-toml-server-btn" class="secondary">Add server (TOML)</button>
           <button type="button" id="save-json-btn" class="secondary" disabled>Save as JSON</button>
           <button type="button" id="save-toml-btn" class="secondary" disabled>Save as TOML</button>
           <span id="config-file-name" class="config-file-name">No file selected</span>
@@ -91,6 +93,19 @@
         <div class="modal-actions">
           <button type="button" id="tool-modal-submit">Run Tool</button>
           <button type="button" id="tool-modal-report" class="secondary" disabled>Download Report</button>
+        </div>
+      </div>
+    </div>
+    <div id="config-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="config-modal-title">
+      <div class="modal-content">
+        <button type="button" class="modal-close" id="config-modal-close" aria-label="Close">×</button>
+        <h3 id="config-modal-title">Add MCP Server</h3>
+        <div class="modal-body">
+          <p id="config-modal-desc" class="modal-tool-desc"></p>
+          <textarea id="config-modal-input" class="modal-textarea" placeholder=""></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="config-modal-merge">Merge</button>
         </div>
       </div>
     </div>
