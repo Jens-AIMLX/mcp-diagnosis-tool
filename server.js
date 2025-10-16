@@ -17,8 +17,10 @@ const {
   parseMcpConfigContent,
   diagnoseConfigEntries,
   mergeNormalizedConfig,
+  removeServerFromConfig,
   serializeMcpConfigToJson,
   serializeMcpConfigToToml,
+  serializeServerSnippet,
   callTool
 } = require('./mcpDoctor');
 
@@ -60,7 +62,8 @@ app.post('/api/config/diagnose', async (req, res) => {
   try {
     const normalized = parseMcpConfigContent(configText ?? config, configFormat);
     const results = await diagnoseConfigEntries(normalized);
-    res.json({ ok: true, format: normalized.format, config: normalized, servers: results });
+    const servers = attachConfigMetadata(normalized, results);
+    res.json({ ok: true, format: normalized.format, config: normalized, servers });
   } catch (err) {
     const status = err.code && err.code.startsWith('CONFIG_') ? 400 : 500;
     res.status(status).json({ ok: false, error: { kind: 'config_error', details: err.message } });
@@ -117,10 +120,33 @@ app.post('/api/config/add-server', async (req, res) => {
     }
     const merged = mergeNormalizedConfig(baseNormalized, addition);
     const results = await diagnoseConfigEntries(merged);
-    res.json({ ok: true, config: merged, servers: results });
+    const servers = attachConfigMetadata(merged, results);
+    res.json({ ok: true, config: merged, servers });
   } catch (err) {
     const status = err.code && err.code.startsWith('CONFIG_') ? 400 : 500;
     res.status(status).json({ ok: false, error: { kind: 'config_merge_error', details: err.message } });
+  }
+});
+
+// API route for removing a server from the current config
+app.post('/api/config/remove-server', async (req, res) => {
+  const { baseConfig, serverName } = req.body || {};
+  if (!baseConfig || typeof baseConfig !== 'object') {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'baseConfig is required' } });
+  }
+  if (!serverName || typeof serverName !== 'string') {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'serverName is required' } });
+  }
+  try {
+    const normalizedBase = JSON.parse(JSON.stringify(baseConfig));
+    const reduced = removeServerFromConfig(normalizedBase, serverName);
+    const results = await diagnoseConfigEntries(reduced);
+    const servers = attachConfigMetadata(reduced, results);
+    res.json({ ok: true, config: reduced, servers });
+  } catch (err) {
+    const status =
+      err.code && (err.code.startsWith('CONFIG_') || err.code === 'CONFIG_NOT_FOUND') ? 400 : 500;
+    res.status(status).json({ ok: false, error: { kind: 'config_remove_error', details: err.message } });
   }
 });
 
@@ -154,3 +180,29 @@ app.get('*', (_req, res) => {
 app.listen(PORT, () => {
   console.log(`MCP diagnosis UI server is running on http://localhost:${PORT}`);
 });
+
+function attachConfigMetadata(normalized, results) {
+  const map = new Map();
+  (normalized.servers || []).forEach((server) => {
+    map.set(server.name, server);
+  });
+  return results.map((item) => {
+    const configEntry = map.get(item.name);
+    const snippetJson = configEntry ? serializeServerSnippet(configEntry, 'json') : null;
+    const snippetToml = configEntry ? serializeServerSnippet(configEntry, 'toml') : null;
+    const defaultSnippet =
+      normalized.format === 'toml'
+        ? snippetToml ?? snippetJson
+        : snippetJson ?? snippetToml;
+    return {
+      ...item,
+      configEntry: configEntry ? JSON.parse(JSON.stringify(configEntry)) : null,
+      configSnippet: defaultSnippet,
+      configSnippets: {
+        json: snippetJson,
+        toml: snippetToml
+      },
+      configFormat: normalized.format
+    };
+  });
+}

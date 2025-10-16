@@ -548,8 +548,10 @@ module.exports = {
   parseMcpConfigContent,
   diagnoseConfigEntries,
   mergeNormalizedConfig,
+  removeServerFromConfig,
   serializeMcpConfigToJson,
   serializeMcpConfigToToml,
+  serializeServerSnippet,
   callTool
 };
 
@@ -886,6 +888,37 @@ function validateNormalizedConfig(config) {
       throw new Error('Server entry missing name.');
     }
   });
+}
+
+function removeServerFromConfig(config, serverName) {
+  if (!serverName) {
+    throw new Error('serverName is required.');
+  }
+  if (!config || typeof config !== 'object') {
+    throw new Error('Config payload must be an object.');
+  }
+  validateNormalizedConfig(config);
+  const next = deepClone(config);
+  const beforeCount = next.servers.length;
+  next.servers = next.servers.filter((server) => server.name !== serverName);
+  if (next.servers.length === beforeCount) {
+    const error = new Error(`Server "${serverName}" not found in configuration.`);
+    error.code = 'CONFIG_NOT_FOUND';
+    throw error;
+  }
+  return next;
+}
+
+function serializeServerSnippet(server, format) {
+  if (!server || typeof server !== 'object') {
+    throw new Error('Server entry must be an object.');
+  }
+  if (format === 'toml') {
+    const root = { mcp_servers: { [server.name]: buildTomlServerObject(server) } };
+    return `${TOML.stringify(root).trim()}\n`;
+  }
+  const root = { mcpServers: { [server.name]: buildJsonServerObject(server) } };
+  return JSON.stringify(root, null, 2);
 }
 
 function mergeNormalizedConfig(baseConfig, additionConfig) {

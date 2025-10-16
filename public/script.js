@@ -44,6 +44,7 @@
   let activeToolContext = null;
   let previousBodyOverflow = '';
   let activeConfigFormat = null;
+  let activeConfigServerName = null;
 
   function escapeHtml(value) {
     if (value === null || value === undefined) return '';
@@ -135,31 +136,23 @@
   }
 
   function updateSaveButtons() {
-    if (!currentConfig) {
-      saveJsonButton.disabled = true;
-      saveTomlButton.disabled = true;
-      return;
-    }
-    saveJsonButton.disabled = currentConfig.format === 'json';
-    saveTomlButton.disabled = currentConfig.format === 'toml';
+    const disabled = !currentConfig || isLoadingConfig;
+    saveJsonButton.disabled = disabled;
+    saveTomlButton.disabled = disabled;
   }
 
   function setLoadingConfig(state) {
     isLoadingConfig = state;
-    if (state) {
-      loadJsonButton.disabled = true;
-      loadTomlButton.disabled = true;
+    loadJsonButton.disabled = state;
+    loadTomlButton.disabled = state;
+    if (configModal.classList.contains('hidden')) {
+      addJsonServerButton.disabled = state;
+      addTomlServerButton.disabled = state;
+    } else {
       addJsonServerButton.disabled = true;
       addTomlServerButton.disabled = true;
-      saveJsonButton.disabled = true;
-      saveTomlButton.disabled = true;
-    } else {
-      loadJsonButton.disabled = false;
-      loadTomlButton.disabled = false;
-      addJsonServerButton.disabled = false;
-      addTomlServerButton.disabled = false;
-      updateSaveButtons();
     }
+    updateSaveButtons();
   }
 
   function describeConfigStatus(fileName, format, count) {
@@ -203,9 +196,20 @@
     updateSaveButtons();
   }
 
-  function replaceConfigServers(configObj, serverResults, fileName) {
+  function replaceConfigServers(configObj, serverResults, fileName, expansionOverride) {
     const label = fileName ?? currentConfigFileName ?? '';
     setCurrentConfig(configObj, label);
+    const expansionMap = new Map();
+    servers.forEach((srv) => {
+      if (srv.source === 'config' && srv.serverName) {
+        expansionMap.set(srv.serverName, Boolean(srv._expanded));
+      }
+    });
+    if (expansionOverride) {
+      expansionOverride.forEach((value, key) => {
+        expansionMap.set(key, Boolean(value));
+      });
+    }
     for (let i = servers.length - 1; i >= 0; i -= 1) {
       if (servers[i].source === 'config') {
         servers.splice(i, 1);
@@ -218,17 +222,29 @@
       const status = result.ok ? 'ok' : 'error';
       const handshake = result.handshake ?? null;
       const displayName = computeDisplayName(spec, item.name);
+      const configSnippets = item.configSnippets || {};
+      const defaultFormat = configSnippets.json ? 'json' : configSnippets.toml ? 'toml' : null;
+      const expanded = expansionMap.has(item.name) ? expansionMap.get(item.name) : false;
       servers.push({
         id: baseId + index,
         source: 'config',
         serverName: item.name,
+        name: item.name,
         displayName,
         spec,
         status,
         result: result.ok ? result : null,
         error: result.ok ? null : result.error,
         handshake,
-        toolTests: {}
+        toolTests: {},
+        configSnippets,
+        configSnippetFormat: defaultFormat,
+        configSnippetEditing: false,
+        configSnippetValue: configSnippets[defaultFormat] ?? '',
+        configSnippet: item.configSnippet ?? null,
+        configFormat: item.configFormat ?? configObj?.format ?? null,
+        configEntry: item.configEntry ? JSON.parse(JSON.stringify(item.configEntry)) : null,
+        _expanded: expanded
       });
     });
     refreshConfigStatusLabel();
@@ -243,6 +259,59 @@
     const args = Array.isArray(spec.args) && spec.args.length ? ` ${spec.args.join(' ')}` : '';
     const combined = `${command}${args}`.trim();
     return combined || fallbackName || 'STDIO server';
+  }
+
+  function buildConfigSnippet(entry) {
+    const snippets = entry.configSnippets || {};
+    const formats = [];
+    if (snippets.json) formats.push('json');
+    if (snippets.toml) formats.push('toml');
+    if (!formats.length) {
+      return '';
+    }
+    if (!entry.configSnippetFormat || !formats.includes(entry.configSnippetFormat)) {
+      entry.configSnippetFormat = formats[0];
+    }
+    const format = entry.configSnippetFormat;
+    const editing = Boolean(entry.configSnippetEditing);
+    const currentSnippet = editing
+      ? entry.configSnippetValue ?? snippets[format] ?? ''
+      : snippets[format] ?? '';
+
+    const formatButtons = formats
+      .map((fmt) => {
+        const isActive = fmt === format;
+        const disabled = editing || !snippets[fmt];
+        return `<button type="button" class="config-button config-format-button${isActive ? ' active' : ''}" data-entry-id="${entry.id}" data-config-action="format" data-config-format="${fmt}"${disabled ? ' disabled' : ''}>${fmt.toUpperCase()}</button>`;
+      })
+      .join('');
+
+    const editButtonLabel = editing ? 'Update' : 'Edit';
+    const editAction = editing ? 'update' : 'edit';
+    const editButton = `<button type="button" class="config-button" data-entry-id="${entry.id}" data-config-action="${editAction}">${editButtonLabel}</button>`;
+    const cancelButton = editing
+      ? `<button type="button" class="config-button secondary" data-entry-id="${entry.id}" data-config-action="cancel">Cancel</button>`
+      : '';
+    const removeButton = `<button type="button" class="config-button danger" data-entry-id="${entry.id}" data-config-action="remove">Remove</button>`;
+
+    const body = editing
+      ? `<textarea class="config-snippet-textarea" data-entry-id="${entry.id}" spellcheck="false">${escapeHtml(currentSnippet)}</textarea>`
+      : `<pre>${escapeHtml(currentSnippet)}</pre>`;
+
+    return `
+      <div class="config-snippet">
+        <div class="config-snippet-header">
+          <strong>Config Snippet</strong>
+          <div class="config-snippet-actions">
+            <div class="config-format-group">${formatButtons}</div>
+            ${editButton}
+            ${cancelButton}
+            ${removeButton}
+          </div>
+        </div>
+        <div class="config-snippet-body">${body}</div>
+      </div>
+    `;
   }
 
   function generateToolReport(reportData) {
@@ -535,17 +604,19 @@
       serversList.appendChild(emptyMessage);
       return;
     }
-    servers.forEach((entry) => {
-      const node = template.content.cloneNode(true);
-      const card = node.querySelector('.server-card');
-      const statusDot = node.querySelector('.status-dot');
-      const nameSpan = node.querySelector('.server-name');
+  servers.forEach((entry) => {
+    const node = template.content.cloneNode(true);
+    const card = node.querySelector('.server-card');
+    const statusDot = node.querySelector('.status-dot');
+    const nameSpan = node.querySelector('.server-name');
       const metaSpan = node.querySelector('.server-meta');
       const summaryDiv = node.querySelector('.server-summary');
       const detailsDiv = node.querySelector('.server-details');
       const toggleBtn = node.querySelector('.toggle-details');
 
-      nameSpan.textContent = entry.serverName ? entry.serverName : entry.displayName;
+    card.dataset.entryId = entry.id;
+
+    nameSpan.textContent = entry.serverName ? entry.serverName : entry.displayName;
       metaSpan.textContent = formatSpecMeta(entry);
 
       if (entry.status === 'pending') {
@@ -563,6 +634,9 @@
       }
 
       const detailSections = [];
+      if (entry.source === 'config') {
+        detailSections.push(buildConfigSnippet(entry));
+      }
       if (entry.handshake) {
         detailSections.push(buildHandshakeBlock(entry.handshake));
       }
@@ -576,9 +650,14 @@
 
       detailsDiv.innerHTML = detailSections.filter(Boolean).join('');
 
+      const shouldExpand = Boolean(entry._expanded);
+      toggleBtn.classList.toggle('open', shouldExpand);
+      detailsDiv.classList.toggle('hidden', !shouldExpand);
+
       toggleBtn.addEventListener('click', () => {
         const isOpen = toggleBtn.classList.toggle('open');
         detailsDiv.classList.toggle('hidden', !isOpen);
+        entry._expanded = isOpen;
       });
 
       serversList.appendChild(card);
@@ -586,23 +665,164 @@
   }
 
   serversList.addEventListener('click', (event) => {
-    const button = event.target.closest('.tool-test-button');
+    const button = event.target.closest('button');
     if (!button) {
       return;
     }
+    if (button.disabled) {
+      return;
+    }
     const entryId = Number(button.dataset.entryId);
-    const toolName = button.dataset.tool;
-    if (!toolName) {
-      alert('Unable to determine tool name for this button.');
+    const entry = Number.isFinite(entryId) ? servers.find((item) => item.id === entryId) : null;
+
+    if (button.classList.contains('tool-test-button')) {
+      if (!entry) {
+        alert('Unable to locate server entry for this tool.');
+        return;
+      }
+      const toolName = button.dataset.tool;
+      if (!toolName) {
+        alert('Unable to determine tool name for this button.');
+        return;
+      }
+      openToolModal(entry, toolName);
       return;
     }
-    const entry = servers.find((item) => item.id === entryId);
-    if (!entry) {
-      alert('Unable to locate server entry for this tool.');
+
+    const action = button.dataset.configAction;
+    if (!action || !entry) {
       return;
     }
-    openToolModal(entry, toolName);
+    switch (action) {
+      case 'format': {
+        const newFormat = button.dataset.configFormat;
+        if (!newFormat || newFormat === entry.configSnippetFormat) {
+          return;
+        }
+        entry.configSnippetFormat = newFormat;
+        entry.configSnippetEditing = false;
+        entry.configSnippetValue = entry.configSnippets?.[newFormat] ?? '';
+        entry._expanded = entry._expanded !== false;
+        renderServers();
+        break;
+      }
+      case 'edit': {
+        entry.configSnippetEditing = true;
+        entry.configSnippetValue = entry.configSnippets?.[entry.configSnippetFormat] ?? '';
+        entry._expanded = true;
+        renderServers();
+        break;
+      }
+      case 'cancel': {
+        entry.configSnippetEditing = false;
+        entry.configSnippetValue = entry.configSnippets?.[entry.configSnippetFormat] ?? '';
+        renderServers();
+        break;
+      }
+      case 'update': {
+        if (!currentConfig) {
+          alert('Load a configuration before editing servers.');
+          return;
+        }
+        if (!entry.configSnippetFormat) {
+          alert('No format selected for this server snippet.');
+          return;
+        }
+        const snippetContainer = button.closest('.config-snippet');
+        const textarea = snippetContainer ? snippetContainer.querySelector('.config-snippet-textarea') : null;
+        const newValue = textarea ? textarea.value : entry.configSnippets?.[entry.configSnippetFormat] ?? '';
+        entry.configSnippetValue = newValue;
+        entry.configSnippetEditing = true;
+        entry._expanded = true;
+        void saveServerSnippet(entry, entry.configSnippetFormat, newValue);
+        break;
+      }
+      case 'remove': {
+        void handleRemoveServer(entry);
+        break;
+      }
+      default:
+        break;
+    }
   });
+
+  async function handleRemoveServer(entry) {
+    if (!currentConfig) {
+      alert('Load a configuration before removing servers.');
+      return;
+    }
+    const name = entry.serverName || entry.name || '(unnamed)';
+    const confirmed = window.confirm(`Remove server "${name}" from the configuration?`);
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setLoadingConfig(true);
+      configFileNameLabel.textContent = `Removing ${name}…`;
+      const response = await fetch('/api/config/remove-server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseConfig: currentConfig, serverName: name })
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok === false) {
+        const message = data?.error?.details || `Unable to remove server (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+      const label = currentConfigFileName || (currentConfig?.format === 'toml' ? 'config.toml' : 'mcp.json');
+      replaceConfigServers(data.config, data.servers || [], label);
+    } catch (err) {
+      alert(`Failed to remove server: ${err.message}`);
+      refreshConfigStatusLabel();
+    } finally {
+      setLoadingConfig(false);
+    }
+  }
+
+  async function saveServerSnippet(entry, format, snippet) {
+    const trimmed = snippet.trim();
+    if (!trimmed) {
+      alert('Configuration snippet cannot be empty.');
+      return;
+    }
+    const name = entry.serverName || entry.name || '(unnamed)';
+    try {
+      setLoadingConfig(true);
+      configFileNameLabel.textContent = `Updating ${name}…`;
+      const response = await fetch('/api/config/add-server', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseConfig: currentConfig, additionText: trimmed, additionFormat: format })
+      });
+      const data = await response.json();
+      if (!response.ok || data.ok === false) {
+        const message = data?.error?.details || `Unable to update server (HTTP ${response.status})`;
+        throw new Error(message);
+      }
+      const label = currentConfigFileName || (format === 'toml' ? 'config.toml' : 'mcp.json');
+      replaceConfigServers(data.config, data.servers || [], label, new Map([[name, true]]));
+      const updatedEntry = servers.find((item) => item.serverName === name && item.source === 'config');
+      if (updatedEntry) {
+        updatedEntry.configSnippetEditing = false;
+        updatedEntry.configSnippetFormat = format;
+        updatedEntry.configSnippetValue = updatedEntry.configSnippets?.[format] ?? snippet;
+        updatedEntry._expanded = true;
+      }
+      renderServers();
+    } catch (err) {
+      alert(`Failed to update server: ${err.message}`);
+      const updatedEntry = servers.find((item) => item.serverName === name && item.source === 'config');
+      if (updatedEntry) {
+        updatedEntry.configSnippetEditing = true;
+        updatedEntry.configSnippetValue = snippet;
+        updatedEntry._expanded = true;
+        renderServers();
+      }
+      refreshConfigStatusLabel();
+    } finally {
+      setLoadingConfig(false);
+    }
+  }
 
   function applyLastArgs(context) {
     const lastArgs = context.lastArgs ?? {};
@@ -1070,19 +1290,26 @@
     }
   }
 
-  function openConfigModal(format) {
+  function openConfigModal(format, snippet = '', serverName = null) {
     if (!toolModal.classList.contains('hidden')) {
       closeToolModal();
     }
     activeConfigFormat = format;
-    configModalTitle.textContent = format === 'toml' ? 'Add MCP Server (TOML)' : 'Add MCP Server (JSON)';
-    configModalDesc.textContent =
-      format === 'toml'
+    activeConfigServerName = serverName;
+    const isEdit = Boolean(serverName);
+    configModalTitle.textContent = isEdit
+      ? `Edit MCP Server: ${serverName}`
+      : format === 'toml'
+        ? 'Add MCP Server (TOML)'
+        : 'Add MCP Server (JSON)';
+    configModalDesc.textContent = isEdit
+      ? 'Update the configuration snippet for this server. Submit to merge and re-diagnose.'
+      : format === 'toml'
         ? 'Paste a TOML snippet that defines one or more [mcp_servers.*] tables to merge into the current configuration.'
         : 'Paste a JSON snippet containing an mcpServers object with one or more server definitions to merge into the current configuration.';
-    configModalInput.value = '';
+    configModalInput.value = snippet || '';
     configModalMergeButton.disabled = false;
-    configModalMergeButton.textContent = 'Merge';
+    configModalMergeButton.textContent = isEdit ? 'Update' : 'Merge';
     addJsonServerButton.disabled = true;
     addTomlServerButton.disabled = true;
     if (modalBackdrop.classList.contains('hidden')) {
@@ -1102,6 +1329,7 @@
     }
     configModal.classList.add('hidden');
     activeConfigFormat = null;
+    activeConfigServerName = null;
     configModalMergeButton.disabled = false;
     configModalMergeButton.textContent = 'Merge';
     configModalInput.value = '';
@@ -1124,6 +1352,7 @@
     const baseConfigPayload = currentConfig ? JSON.parse(JSON.stringify(currentConfig)) : null;
     const previousLabel = configFileNameLabel.textContent;
     configModalMergeButton.disabled = true;
+    const isEdit = Boolean(activeConfigServerName);
     configModalMergeButton.textContent = 'Merging…';
     try {
       setLoadingConfig(true);
@@ -1144,7 +1373,7 @@
     } catch (err) {
       alert(`Failed to add server: ${err.message}`);
       configModalMergeButton.disabled = false;
-      configModalMergeButton.textContent = 'Merge';
+      configModalMergeButton.textContent = isEdit ? 'Update' : 'Merge';
       if (currentConfig) {
         refreshConfigStatusLabel();
       } else {

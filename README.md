@@ -153,6 +153,21 @@ Responses follow the same shapes used in the UI. See `server.js` for full reques
   - Tool tester and config merge modals (`public/script.js`)
 - **Tests** – `node:test` suite in `test/mcpDoctor.test.js` covering parsing, merging, and diagnostics.
 
+## Version history
+
+### 1.0.1
+
+- Added in-app config management controls: view/edit server config snippets, merge updates via modal, and remove servers from the active configuration without leaving the UI.
+- Unified save buttons so JSON and TOML exports are always available, making format conversion a single click regardless of the source format.
+- Improved backend support for per-server metadata (snippets, normalized entries) and exposed dedicated endpoints for adding/removing servers.
+- Updated the UI to show config-specific controls alongside diagnostics, matching the layout in the screenshot above.
+
+### 1.0.0
+
+- Initial release with core diagnostics (stdio/HTTP/SSE), capability listings, error classification, and the tool testing modal with Markdown report generation.
+- Introduced JSON/TOML config loading, normalization, and conversion flows.
+- Delivered the dark-themed dashboard for tracking multiple MCP servers in a single session.
+
 ## Disclaimer
 
 This utility depends on the stability of MCP server implementations and the `@modelcontextprotocol/sdk`. It’s best-effort and may need adjustments to match server-specific behaviours (timeouts, transports, schema variations). Contributions and issue reports are welcome!  
