@@ -1,47 +1,160 @@
 # MCP Diagnosis Tool
 
-This repository contains a self‑contained diagnostic utility and web user interface for investigating [Model Context Protocol (MCP)](https://modelcontext.org) servers. It was designed to follow the workflow described in the earlier MCP doctor script while providing a friendlier, visual experience similar to the tools panel shown in the screenshot provided by the user.
+MCP Diagnosis Tool is a browser-based utility for inspecting [Model Context Protocol (MCP)](https://modelcontextprotocol.io/about) servers. It automates the handshake, lists tools/prompts/resources, captures handshake metadata, and provides quick actions for testing tools. You can load full MCP configurations (JSON or Codex-style TOML), merge additional server definitions, and convert between formats.
+
+## Table of contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Diagnosing individual servers](#diagnosing-individual-servers)
+- [Working with MCP configurations](#working-with-mcp-configurations)
+  - [Loading configs (JSON or TOML)](#loading-configs-json-or-toml)
+  - [Adding server snippets](#adding-server-snippets)
+  - [Saving / converting configs](#saving--converting-configs)
+  - [How configs are normalised](#how-configs-are-normalised)
+- [Tool testing & reports](#tool-testing--reports)
+- [REST API](#rest-api)
+- [Implementation overview](#implementation-overview)
+- [Disclaimer](#disclaimer)
 
 ## Features
 
-- **Detect server availability.** Determine whether an MCP endpoint is reachable over HTTP, streamable HTTP or stdio.
-- **Inspect exposed tools, prompts and resources.** After performing the official `initialize`/`notifications/initialized` handshake, the tool lists the names and descriptions of the server's capabilities.
-- **Error classification.** If a connection or handshake fails, the tool categorises the failure (e.g. protocol version mismatch, missing version header, connection refused) and presents a suggested remedy.
-- **Multiple endpoints in one session.** The web UI lets you diagnose several MCP servers one after another and keeps each result visible. Entries show a coloured status dot (green for reachable, red for errors, amber while in progress), a summary of capability counts and expandable details.
-- **Ready to run.** All of the code necessary to start the server and UI is included. The server is implemented in Node.js and relies on the official `@modelcontextprotocol/sdk` client library for handshake logic. The front‑end is plain HTML/CSS/JS and does not require any build step.
+- **Connection diagnostics** for stdio, Streamable HTTP, and SSE transports with timeout handling and rich error classification.
+- **Capability discovery** showing tools/prompts/resources, handshake metadata, and protocol version.
+- **Tool tester** that renders argument schemas, gathers inputs via modal forms, runs the tool, and generates Markdown reports (including timing and output).
+- **Config management UI** that loads `mcp.json` or Codex `config.toml`, merges additional snippets, and exports either format—perfect for format conversion workflows.
+- **Backend normalisation** ensuring consistent data structures, deterministic merges, and format-preserving exports.
 
-## Getting started
+## Quick start
 
-1. **Install dependencies.** From within the `mcp-diagnosis-tool` directory run:
+```bash
+git clone <repository-url>
+cd mcp-diagnosis-tool
+npm install
+npm start
+```
 
-   ```bash
-   npm install
-   ```
+Open `http://localhost:3000` in your browser. To change the port, use `PORT=4000 npm start`.
 
-   This will install `express`, `node-fetch`, `cors` and the `@modelcontextprotocol/sdk` library.
+> **Prerequisites:** Node.js ≥ 18, npm, network access for Streamable HTTP diagnostics, and any MCP servers you want to test.
 
-2. **Start the server.** Launch the Node server on port 3000 (or any other port via the `PORT` environment variable):
+## Diagnosing individual servers
 
-   ```bash
-   npm start
-   ```
+1. Choose **HTTP** or **STDIO** in the form at the top of the UI.
+2. Provide either the MCP URL (HTTP) or the command line to launch your stdio server.
+3. Click **Diagnose**. The entry appears in the “Known MCP Servers” list:
+   - Amber dot → in progress
+   - Green → success with tool/prompt/resource counts
+   - Red → error, with expandable details
+4. Click the chevron to see:
+   - Handshake metadata (transport, protocol version, server info, capabilities, instructions)
+   - Tools (with schema summary, “Test” button, last status)
+   - Prompts and resources lists
+5. For stdio entries, the command is re-displayed with arguments split.
 
-   You should see a message like `MCP diagnosis UI server is running on http://localhost:3000` in your terminal. The server exposes a REST endpoint at `/api/diagnose` and serves a static UI.
+## Working with MCP configurations
 
-3. **Open the UI.** Navigate to `http://localhost:3000` in your browser. You will be greeted by the MCP Diagnosis Tool interface.
+### Loading configs (JSON or TOML)
 
-4. **Diagnose an endpoint.**
-   - To diagnose an HTTP endpoint, leave the mode set to **HTTP** and enter the full URL to the MCP endpoint (e.g. `http://localhost:3000/mcp`).
-   - To diagnose a stdio server, switch the mode to **STDIO** and provide the command used to launch your MCP server (e.g. `node build/index.js --port 1234`). The tool splits the command line into the executable and its arguments.
-   - Click **Diagnose**. A new entry will appear under “Known MCP Servers” and will show a spinning status while the handshake takes place. When complete the entry displays the number of tools, prompts and resources exposed or an error classification if something went wrong.
-   - Click the arrow on the right to expand or collapse detailed information including the names and descriptions of each tool, prompt and resource or the full error details and suggested advice.
+- **Load standard mcp.json:** selects JSON files following the OpenAI MCP client schema (`mcpServers` object).
+- **Load mcp.toml:** selects Codex-style TOML configs (`mcp_servers` tables and optional top-level flags).
 
-## Implementation notes
+When you load a config:
 
-- **Node server (`server.js`):** uses `express` to handle JSON requests and serve static files. It imports the `diagnose` function from `mcpDoctor.js` to perform the actual server inspection.
-- **MCP doctor module (`mcpDoctor.js`):** wraps the official MCP client SDK (`@modelcontextprotocol/sdk`) to connect over stdio, streamable HTTP or SSE. It performs the initialize handshake, lists tools/prompts/resources and classifies errors into a small set of kinds with human‑readable advice.
-- **Front‑end:** a lightweight HTML/CSS/JS application. The dark theme and card‑based layout were inspired by the Tools & MCP management screen shown in the screenshot. Vanilla JavaScript manages state, interacts with the API and updates the DOM dynamically.
+- The backend normalises field names (`bearer_token_env_var` → `bearerTokenEnvVar`, etc.).
+- The UI re-runs diagnostics for every server entry and displays the results.
+- The status label shows file name, format, and server count.
+- Save-as buttons are enabled based on source format.
+
+### Adding server snippets
+
+Use the **Add server (JSON)** or **Add server (TOML)** buttons:
+
+- A modal opens with instructions and a textarea.
+- Paste a snippet containing either an `mcpServers` object (JSON) or `[mcp_servers.*]` tables (TOML).
+- Click **Merge** to send the snippet to the backend.
+- The server merges the new definitions into the existing config (overwriting by name), re-diagnoses the full list, and refreshes the UI.
+
+> The modal merges onto whatever configuration is currently loaded. If none is loaded, the snippet becomes the new configuration.
+
+### Saving / converting configs
+
+- **Save as JSON** produces a canonical `mcp.json` with a top-level `mcpServers` object.
+- **Save as TOML** converts to Codex-style TOML using nested `[mcp_servers.<name>]` tables.
+- Save buttons disable when already in that format to prevent redundant exports.
+
+Conversion is powered by the normalised config representation (`format`, `topLevel`, `servers`), ensuring:
+
+- Top-level keys like `experimental_use_rmcp_client`, `tool_timeout_sec`, etc., are preserved.
+- Server entries include consistent keys (`command`, `args`, `env`, `url`, `bearer_token_env_var`, etc.).
+
+### How configs are normalised
+
+Internally, configs are represented as:
+
+```json
+{
+  "format": "json" | "toml",
+  "topLevel": { ... },           // Non-server keys
+  "servers": [
+    {
+      "name": "playwright",
+      "mode": "stdio" | "http",
+      "command": "...",           // stdio only
+      "args": ["..."],            // stdio only
+      "env": { "KEY": "VALUE" },
+      "url": "...",               // http only
+      "bearerTokenEnvVar": "...", // http optional
+      "bearerTokenFile": "...",
+      "startupTimeoutSec": 15,
+      "toolTimeoutSec": 60,
+      "enabled": true,
+      "extra": {...}              // unrecognised fields retained
+    }
+  ]
+}
+```
+
+Serialisers rebuild the exact JSON or TOML schema on export, so you can round-trip without losing metadata.
+
+## Tool testing & reports
+
+- Click **Test** next to a tool to open the tool modal.
+- If the server exposed `inputSchema`, the modal renders form fields respecting types, enums, and required flags.
+- Submit runs `tools/call` and captures start/end timestamps, duration, transport, and handshake.
+- **Download Report** (enabled after a run) generates `MCPDiagnois_Report_<timestamp>_<server>_<tool>.md` with markdown content:
+  - Handshake summary
+  - Serialized server spec and arguments
+  - Tool output or error details
+
+Reports are perfect for audits or sharing diagnostics with teammates.
+
+## REST API
+
+Behind the UI is an Express API you can integrate programmatically:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/diagnose` | POST | Diagnose a single server (`{ mode: "stdio"|"http", command?, args?, url? }`). |
+| `/api/config/diagnose` | POST | Normalise and diagnose an MCP config (`configText`, optional `configFormat`). Returns normalized config + per-server results. |
+| `/api/config/add-server` | POST | Merge a config snippet into an existing normalized config (`baseConfig`, `additionText`, `additionFormat`). |
+| `/api/config/export` | POST | Convert normalized config to JSON or TOML (`targetFormat`). |
+| `/api/tools/call` | POST | Invoke `tools/call` on a spec (same payload as `/api/diagnose` plus `toolName`, `toolArgs`). |
+
+Responses follow the same shapes used in the UI. See `server.js` for full request/response details.
+
+## Implementation overview
+
+- **`server.js`** – Express server exposing diagnostic/config endpoints and hosting static assets.
+- **`mcpDoctor.js`** – Connects via `@modelcontextprotocol/sdk`, handles timeouts/error classification, normalizes configs, merges additions, and serializes JSON/TOML.
+- **`public/`** – Vanilla JS UI with:
+  - Config management bar (`public/index.html`, `public/style.css`)
+  - Diagnosed server dashboard with expandable cards
+  - Tool tester and config merge modals (`public/script.js`)
+- **Tests** – `node:test` suite in `test/mcpDoctor.test.js` covering parsing, merging, and diagnostics.
 
 ## Disclaimer
 
-This tool was generated by an AI to satisfy a user request and has not been extensively tested across all possible MCP implementations. It relies on the `@modelcontextprotocol/sdk` client library being installed. Should you encounter issues connecting to your particular server implementation, consider adjusting the timeout or refining the error classification logic in `mcpDoctor.js`.
+This utility depends on the stability of MCP server implementations and the `@modelcontextprotocol/sdk`. It’s best-effort and may need adjustments to match server-specific behaviours (timeouts, transports, schema variations). Contributions and issue reports are welcome!  
+
+Happy diagnosing! 🚀
