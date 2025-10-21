@@ -1,0 +1,49 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--output-dir",
+        "C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots",
+        "--save-session",
+        "--save-trace",
+        "--browser",
+        "chrome",
+        "--viewport-size",
+        "2400,1350",
+        "--isolated",
+        "--no-sandbox"
+      ],
+      "env": {
+        "PLAYWRIGHT_BROWSERS_PATH": "0"
+      }
+    },
+    "cognitive-visual-req": {
+      "command": "node",
+      "args": [
+        "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js"
+      ],
+      "env": {
+        "NODE_ENV": "production",
+        "SCREENSHOT_PATH": "#PLAYWRIGHTPATH#",
+        "CALIBRATION_PATH": "C:/Users/jenss/ONEDRI~2/Code/source/CUSTOM~1/BAHNAB~1/DEVELO~1/WORKFL~1/EVIDEN~1/imaging/CALIBR~1",
+        "DIFFERENCE_PATH": "C:/Users/jenss/ONEDRI~2/Code/source/CUSTOM~1/BAHNAB~1/DEVELO~1/WORKFL~1/EVIDEN~1/imaging/DIFFBA~1",
+        "VISUAL_DIFF_DEFAULT_OCR": "both",
+        "VISUAL_DIFF_DEFAULT_COLOR": "elements",
+        "VISUAL_DIFF_DEFAULT_DIMENSIONS": "both",
+        "VISUAL_DIFF_DEFAULT_ELEMENTS": "both",
+        "VISUAL_DIFF_DEFAULT_AREA_WEIGHT": "0",
+        "VISUAL_DIFF_DEFAULT_PRECALIBRATION": "ON",
+        "REPORT_PATH": "C:/Users/jenss/ONEDRI~2/Code/source/CUSTOM~1/BAHNAB~1/DEVELO~1/WORKFL~1/reports",
+        "VISUAL_DIFF_PROVIDE_REPORT": "ON",
+        "ARCHIVE_PATH": "C:/Users/jenss/ONEDRI~2/Code/source/CUSTOM~1/BAHNAB~1/DEVELO~1/WORKFL~1/ARCHIV~1",
+        "AUTO_SCREENSHOT": "OFF"
+      }
+    },
+    "hello_world": {
+      "command": "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/BPMX_MCP/node_modules/.bin/mcp-hello-world.cmd"
+    }
+  }
+}

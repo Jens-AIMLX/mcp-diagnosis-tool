@@ -467,6 +467,33 @@
     return html;
   }
 
+  function buildSessionControlsBlock(entry) {
+    const serverId = sanitizeKey(entry.id || entry.serverName || 'unknown');
+    const hasSession = entry.activeSessionId;
+    const sessionId = hasSession ? escapeHtml(entry.activeSessionId) : '';
+    const closeButtonDisabled = !hasSession ? ' disabled' : '';
+    
+    let html = '<div class="detail-block session-controls-block">';
+    html += '<div class="session-controls-row">';
+    html += '<label class="session-checkbox-label">';
+    html += `<input type="checkbox" class="session-keep-open-checkbox" data-server-id="${escapeAttribute(serverId)}" ${hasSession ? 'checked' : ''}/>`;
+    html += '<span>Keep session open (for multi-step workflows)</span>';
+    html += '</label>';
+    html += `<button type="button" class="session-close-button secondary" data-server-id="${escapeAttribute(serverId)}"${closeButtonDisabled}>Close session</button>`;
+    html += '</div>';
+    
+    if (hasSession) {
+      const statusText = entry.sessionReused ? 'Session reused' : 'Session created';
+      html += '<div class="session-status active">';
+      html += `<span class="session-status-label">✓ ${statusText}</span>`;
+      html += `<span class="session-status-id">${sessionId}</span>`;
+      html += '</div>';
+    }
+    
+    html += '</div>';
+    return html;
+  }
+
   function renderToolTestStatus(state) {
     if (!state) return '';
     const statusClass = state.status || 'pending';
@@ -640,6 +667,9 @@
       if (entry.handshake) {
         detailSections.push(buildHandshakeBlock(entry.handshake));
       }
+      // Add session controls after handshake
+      detailSections.push(buildSessionControlsBlock(entry));
+      
       if (entry.status === 'ok') {
         detailSections.push(buildToolsBlock(entry));
         detailSections.push(buildPromptsBlock(entry));
@@ -664,6 +694,21 @@
     });
   }
 
+  // Handle session checkbox changes
+  serversList.addEventListener('change', (event) => {
+    const checkbox = event.target;
+    if (checkbox.classList && checkbox.classList.contains('session-keep-open-checkbox')) {
+      const serverId = checkbox.dataset.serverId;
+      const entry = servers.find((item) => sanitizeKey(item.id || item.serverName || 'unknown') === serverId);
+      if (entry) {
+        if (!checkbox.checked && entry.activeSessionId) {
+          // Checkbox unchecked - close the session
+          void handleCloseServerSession(entry);
+        }
+      }
+    }
+  });
+
   serversList.addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (!button) {
@@ -686,6 +731,16 @@
         return;
       }
       openToolModal(entry, toolName);
+      return;
+    }
+
+    // Handle session close button
+    if (button.classList.contains('session-close-button')) {
+      const serverId = button.dataset.serverId;
+      const entry = servers.find((item) => sanitizeKey(item.id || item.serverName || 'unknown') === serverId);
+      if (entry) {
+        void handleCloseServerSession(entry);
+      }
       return;
     }
 
@@ -947,6 +1002,35 @@
     }
   }
 
+
+  async function handleCloseServerSession(entry) {
+    if (!entry.activeSessionId) {
+      return;
+    }
+    
+    const sessionId = entry.activeSessionId;
+    
+    try {
+      const response = await fetch('/api/sessions/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok || !data.ok) {
+        throw new Error(data?.error || 'Failed to close session');
+      }
+      
+      entry.activeSessionId = null;
+      entry.sessionReused = false;
+      renderServers();
+    } catch (err) {
+      alert(`Failed to close session: ${err.message}`);
+    }
+  }
+
   function closeToolModal() {
     if (toolModal.classList.contains('hidden')) {
       return;
@@ -992,6 +1076,7 @@
       inputId: `tool-arg-${entry.id}-${sanitizeKey(tool.name)}-${sanitizeKey(spec.name)}`
     }));
     const lastArgs = entry.toolTests?.[tool.name]?.lastArgs ?? {};
+    
     activeToolContext = {
       entry,
       tool,
@@ -1100,6 +1185,10 @@
       return;
     }
     const { entry, tool } = activeToolContext;
+    // Get keepSessionOpen state from the server's checkbox
+    const serverId = sanitizeKey(entry.id || entry.serverName || 'unknown');
+    const serverCheckbox = document.querySelector(`.session-keep-open-checkbox[data-server-id="${serverId}"]`);
+    const keepSessionOpen = serverCheckbox ? serverCheckbox.checked : false;
     const startedAtDate = new Date();
     const startedAtIso = toISOStringWithTZ(startedAtDate);
     toolModalSubmit.disabled = true;
@@ -1114,7 +1203,7 @@
       const response = await fetch('/api/tools/call', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spec: entry.spec, toolName: tool.name, toolArgs: args })
+        body: JSON.stringify({ spec: entry.spec, toolName: tool.name, toolArgs: args, keepSessionOpen })
       });
       const data = await response.json();
       const finishedAtDate = new Date();
@@ -1130,6 +1219,16 @@
       if (data.ok) {
         entry.toolTests[tool.name] = { status: 'ok', output: data.output, lastArgs: args };
         activeToolContext.lastArgs = args;
+        
+        // Handle session info
+        if (data.sessionId) {
+          entry.activeSessionId = data.sessionId;
+          entry.sessionReused = data.sessionReused;
+        } else {
+          entry.activeSessionId = null;
+          entry.sessionReused = false;
+        }
+        
         const resultPayload = { ok: true, output: data.output };
         setModalResult(resultPayload);
         const reportData = {
@@ -1143,7 +1242,9 @@
           success: true,
           response: data.output,
           error: null,
-          handshake: handshakeInfo
+          handshake: handshakeInfo,
+          sessionId: data.sessionId,
+          sessionReused: data.sessionReused
         };
         entry.toolTests[tool.name].reportData = reportData;
         entry.toolTests[tool.name].totalResult = resultPayload;
@@ -1152,6 +1253,8 @@
         entry.toolTests[tool.name].durationMs = durationMs;
         activeToolContext.reportData = reportData;
         toolModalReport.disabled = false;
+        // Re-render to update session status
+        renderServers();
       } else {
         entry.toolTests[tool.name] = {
           status: 'error',

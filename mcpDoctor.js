@@ -24,8 +24,169 @@ const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js'
 const fs = require('fs/promises');
 const path = require('path');
 const TOML = require('@iarna/toml');
+const { log, logError } = require('./logger');
 
 const DEFAULT_TIMEOUT_MS = 15000;
+
+/**
+ * Global session store for persistent MCP client connections.
+ * Key: sessionId (unique identifier)
+ * Value: { client, transportName, handshake, spec, createdAt }
+ */
+const activeSessions = new Map();
+
+/**
+ * Generate a unique session ID for a given spec
+ * @param {object} spec The MCP server specification
+ * @returns {string} A unique session identifier
+ */
+function generateSessionId(spec) {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 9);
+  if (spec.mode === 'http') {
+    return `http-${spec.url}-${timestamp}-${random}`;
+  }
+  return `stdio-${spec.command}-${timestamp}-${random}`;
+}
+
+/**
+ * Get or create a session for the given spec
+ * @param {object} spec The MCP server specification
+ * @param {boolean} keepAlive Whether to keep the session alive
+ * @returns {Promise<{sessionId: string, client: any, transportName: string, handshake: object, isNew: boolean}>}
+ */
+async function getOrCreateSession(spec, keepAlive = false) {
+  // Try to find existing session for the same spec
+  for (const [sessionId, session] of activeSessions.entries()) {
+    if (specsMatch(spec, session.spec)) {
+      log('session_reuse', { sessionId, mode: session.spec.mode, command: session.spec.command, url: session.spec.url, args: session.spec.args });
+      return {
+        sessionId,
+        client: session.client,
+        transportName: session.transportName,
+        handshake: session.handshake,
+        isNew: false
+      };
+    }
+  }
+  
+  // Create new session
+  const connection = await connectClient(spec, DEFAULT_TIMEOUT_MS);
+  const sessionId = generateSessionId(spec);
+  
+  if (keepAlive) {
+    activeSessions.set(sessionId, {
+      client: connection.client,
+      transportName: connection.transportName,
+      handshake: connection.handshake,
+      spec: JSON.parse(JSON.stringify(spec)),
+      createdAt: new Date().toISOString()
+    });
+    log('session_created', {
+      sessionId,
+      mode: spec.mode,
+      command: spec.command,
+      url: spec.url,
+      args: spec.args,
+      transport: connection.transportName,
+      createdAt: new Date().toISOString(),
+      protocolVersion: connection.handshake?.protocolVersion
+    });
+  }
+  
+  return {
+    sessionId,
+    client: connection.client,
+    transportName: connection.transportName,
+    handshake: connection.handshake,
+    isNew: true
+  };
+}
+
+/**
+ * Check if two specs are equivalent
+ * @param {object} spec1
+ * @param {object} spec2
+ * @returns {boolean}
+ */
+function specsMatch(spec1, spec2) {
+  if (spec1.mode !== spec2.mode) return false;
+  if (spec1.mode === 'http') {
+    return spec1.url === spec2.url;
+  }
+  if (spec1.mode === 'stdio') {
+    return spec1.command === spec2.command &&
+           JSON.stringify(spec1.args || []) === JSON.stringify(spec2.args || []);
+  }
+  return false;
+}
+
+/**
+ * Close a specific session
+ * @param {string} sessionId
+ * @returns {Promise<{ok: boolean, error?: string}>}
+ */
+async function closeSession(sessionId) {
+  const session = activeSessions.get(sessionId);
+  if (!session) {
+    return { ok: false, error: 'Session not found' };
+  }
+  
+  try {
+    await session.client.close().catch(() => {});
+    activeSessions.delete(sessionId);
+    log('session_closed', {
+      sessionId,
+      closedAt: new Date().toISOString()
+    });
+    return { ok: true };
+  } catch (err) {
+    activeSessions.delete(sessionId);
+    logError('session_close_error', err, { sessionId });
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * List all active sessions
+ * @returns {Array<{sessionId: string, spec: object, transportName: string, createdAt: string}>}
+ */
+function listSessions() {
+  const sessions = [];
+  for (const [sessionId, session] of activeSessions.entries()) {
+    sessions.push({
+      sessionId,
+      spec: session.spec,
+      transportName: session.transportName,
+      createdAt: session.createdAt
+    });
+  }
+  return sessions;
+}
+
+/**
+ * Close all active sessions
+ * @returns {Promise<{closed: number, errors: number}>}
+ */
+async function closeAllSessions() {
+  let closed = 0;
+  let errors = 0;
+  
+  for (const [sessionId, session] of activeSessions.entries()) {
+    try {
+      await session.client.close().catch(() => {});
+      activeSessions.delete(sessionId);
+      closed++;
+      log('session_closed', { sessionId });
+    } catch (err) {
+      errors++;
+      activeSessions.delete(sessionId);
+      logError('session_close_error', err, { sessionId });
+    }
+  }
+  
+  return { closed, errors };
+}
 
 /**
  * Wrap a promise with a timeout. If the promise does not resolve within the
@@ -182,6 +343,7 @@ async function connectClient(spec, timeoutMs = DEFAULT_TIMEOUT_MS) {
       instructions: client.getInstructions() ?? null
     };
 
+    log('connect_success', { mode: spec.mode, command: spec.command, url: spec.url, transport: transportName });
     return { client, transportName, handshake };
   } catch (err) {
     try {
@@ -189,6 +351,7 @@ async function connectClient(spec, timeoutMs = DEFAULT_TIMEOUT_MS) {
     } catch (_) {
       /* ignore close errors */
     }
+    logError('connect_error', err, { mode: spec.mode, command: spec.command, url: spec.url });
     throw err;
   }
 }
@@ -502,42 +665,86 @@ function serializeMcpConfigToToml(config) {
  * @param {{mode: 'stdio'|'http', command?: string, args?: string[], env?: Record<string, string>, url?: string}} spec
  * @param {string} toolName
  * @param {Record<string, unknown>} [toolArgs]
- * @returns {Promise<{ok: boolean, transport: 'stdio'|'http'|'sse'|null, handshake?: object, output?: unknown, error?: {kind: string, advice?: string, details?: unknown}}>}
+ * @param {{keepSessionOpen?: boolean}} [options]
+ * @returns {Promise<{ok: boolean, transport: 'stdio'|'http'|'sse'|null, handshake?: object, output?: unknown, sessionId?: string, sessionReused?: boolean, error?: {kind: string, advice?: string, details?: unknown}}>}
  */
-async function callTool(spec, toolName, toolArgs = {}) {
+async function callTool(spec, toolName, toolArgs = {}, options = {}) {
   if (typeof toolName !== 'string' || !toolName.trim()) {
     throw new Error('toolName must be a non-empty string');
   }
   if (toolArgs === null || typeof toolArgs !== 'object' || Array.isArray(toolArgs)) {
     throw new Error('toolArgs must be an object');
   }
-  let client;
-  let connection;
+  
+  const keepSessionOpen = options.keepSessionOpen ?? false;
+  let session;
+  let shouldClose = true;
+  
   try {
-    connection = await connectClient(spec, DEFAULT_TIMEOUT_MS);
-    client = connection.client;
+    log('tool_call_begin', { toolName, keepSessionOpen, spec: { mode: spec.mode, command: spec.command, url: spec.url, args: spec.args }, args: toolArgs });
+    try { process.stdout.write(`[DEBUG] tool_call_begin ${toolName} keep=${keepSessionOpen}\n`); } catch(_) {}
+    session = await getOrCreateSession(spec, keepSessionOpen);
+    shouldClose = !keepSessionOpen;
+    
     const result = await withTimeout(
-      client.callTool({ name: toolName, arguments: toolArgs }),
+      session.client.callTool({ name: toolName, arguments: toolArgs }),
       DEFAULT_TIMEOUT_MS,
       `tools/call (${toolName})`
     );
-    await client.close().catch(() => {});
-    return {
-      ok: true,
-      transport: connection.transportName,
-      handshake: connection.handshake,
-      output: result
-    };
-  } catch (err) {
-    if (client) {
-      await client.close().catch(() => {});
+    
+    if (shouldClose) {
+      await session.client.close().catch(() => {});
     }
-    return {
-      ok: false,
-      transport: connection?.transportName ?? null,
-      handshake: connection?.handshake,
-      error: classifyError(err)
+    
+    const endedAt = new Date().toISOString();
+    const response = {
+      ok: true,
+      transport: session.transportName,
+      handshake: session.handshake,
+      output: result,
+      sessionId: keepSessionOpen ? session.sessionId : undefined,
+      sessionReused: !session.isNew
     };
+    try { process.stdout.write(`[DEBUG] tool_call_success ${toolName} sessionId=${response.sessionId}\n`); } catch(_) {}
+    log('tool_call_success', {
+      toolName,
+      sessionId: response.sessionId || null,
+      sessionReused: response.sessionReused,
+      transport: response.transport,
+      spec: { mode: spec.mode, command: spec.command, url: spec.url, args: spec.args },
+      endedAt
+    });
+    log('tool_call_end', {
+      toolName,
+      sessionId: response.sessionId || null,
+      keepSessionOpen,
+      closed: shouldClose,
+      endedAt
+    });
+    return response;
+  } catch (err) {
+    if (session?.client && shouldClose) {
+      await session.client.close().catch(() => {});
+    }
+    const endedAt = new Date().toISOString();
+    const failure = {
+      ok: false,
+      transport: session?.transportName ?? null,
+      handshake: session?.handshake,
+      error: classifyError(err),
+      sessionId: keepSessionOpen && session ? session.sessionId : undefined
+    };
+    try { process.stderr.write(`[DEBUG] tool_call_error ${toolName}: ${err?.message}\n`); } catch(_) {}
+    logError('tool_call_error', err, { toolName, transport: failure.transport, sessionId: failure.sessionId || null, endedAt });
+    log('tool_call_end', {
+      toolName,
+      sessionId: failure.sessionId || null,
+      keepSessionOpen,
+      closed: shouldClose,
+      error: true,
+      endedAt
+    });
+    return failure;
   }
 }
 
@@ -552,7 +759,11 @@ module.exports = {
   serializeMcpConfigToJson,
   serializeMcpConfigToToml,
   serializeServerSnippet,
-  callTool
+  callTool,
+  // Session management
+  listSessions,
+  closeSession,
+  closeAllSessions
 };
 
 // ---------- normalisation helpers ----------

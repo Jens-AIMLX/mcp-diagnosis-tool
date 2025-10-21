@@ -1,0 +1,22 @@
+
+> mcp-diagnosis-tool@1.0.0 start
+> node server.js
+
+[DEBUG_SIGNATURE] server.js loaded (enhanced logging)
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:10.944Z","event":"server_start","port":3060,"logPath":"C:\\Users\\jenss\\OneDrive - Singularyt UG\\Code\\source\\AIServer\\mcp-diagnosis-tool\\server.debug.log"}
+MCP diagnosis UI server is running on http://localhost:3060
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:10.951Z","event":"server_listening","port":3060}
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:10.952Z","event":"selftest_scheduled","delayMs":1500}
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:11.176Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
+[DEBUG] selftest_begin
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:12.457Z","event":"selftest_begin"}
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:12.476Z","event":"tool_call_begin","toolName":"nonexistent_tool_for_logging","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{}}
+[DEBUG] tool_call_begin nonexistent_tool_for_logging keep=true
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:14.449Z","event":"connect_success","mode":"stdio","command":"npx","transport":"stdio"}
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:14.450Z","event":"session_created","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"],"transport":"stdio","createdAt":"2025-10-21T21:28:14.450Z","protocolVersion":"negotiated"}
+Session: C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\session-1761082094456
+[DEBUG] tool_call_success nonexistent_tool_for_logging sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:14.456Z","event":"tool_call_success","toolName":"nonexistent_tool_for_logging","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":false,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-21T21:28:14.456Z"}
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:14.457Z","event":"tool_call_end","toolName":"nonexistent_tool_for_logging","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-21T21:28:14.456Z"}
+[DEBUG_JSON] {"ts":"2025-10-21T21:28:14.457Z","event":"selftest_result","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","transport":"stdio"}
+[DEBUG] selftest_done ok=true
