@@ -611,6 +611,54 @@ section h2 {
   font-size: 0.8rem;
 }
 
+/* Modal Session Info Styles */
+.modal-session-info {
+  background-color: #1a202c;
+  border: 1px solid #38a169;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.session-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.session-info-label {
+  font-weight: 600;
+  color: #68d391;
+  font-size: 0.9rem;
+}
+
+.session-info-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-info-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-info-key {
+  font-weight: 500;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  min-width: 50px;
+}
+
+.session-info-value {
+  font-family: 'Courier New', monospace;
+  color: #e2e8f0;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

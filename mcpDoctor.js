@@ -65,7 +65,8 @@ async function getOrCreateSession(spec, keepAlive = false) {
         client: session.client,
         transportName: session.transportName,
         handshake: session.handshake,
-        isNew: false
+        isNew: false,
+        createdAt: session.createdAt
       };
     }
   }
@@ -94,12 +95,14 @@ async function getOrCreateSession(spec, keepAlive = false) {
     });
   }
   
+  const createdAt = new Date().toISOString();
   return {
     sessionId,
     client: connection.client,
     transportName: connection.transportName,
     handshake: connection.handshake,
-    isNew: true
+    isNew: true,
+    createdAt
   };
 }
 
@@ -703,7 +706,8 @@ async function callTool(spec, toolName, toolArgs = {}, options = {}) {
       handshake: session.handshake,
       output: result,
       sessionId: keepSessionOpen ? session.sessionId : undefined,
-      sessionReused: !session.isNew
+      sessionReused: !session.isNew,
+      sessionCreatedAt: keepSessionOpen ? session.createdAt : undefined
     };
     try { process.stdout.write(`[DEBUG] tool_call_success ${toolName} sessionId=${response.sessionId}\n`); } catch(_) {}
     log('tool_call_success', {

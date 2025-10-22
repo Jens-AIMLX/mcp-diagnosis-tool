@@ -30,6 +30,12 @@
   const toolModalSubmit = document.getElementById('tool-modal-submit');
   const toolModalReport = document.getElementById('tool-modal-report');
   const toolModalClose = document.getElementById('tool-modal-close');
+  const toolModalSessionInfo = document.getElementById('tool-modal-session-info');
+  const toolModalSessionId = document.getElementById('tool-modal-session-id');
+  const toolModalSessionCreated = document.getElementById('tool-modal-session-created');
+  const toolModalCloseSession = document.getElementById('tool-modal-close-session');
+  const toolModalHideSession = document.getElementById('tool-modal-hide-session');
+
   const configModal = document.getElementById('config-modal');
   const configModalTitle = document.getElementById('config-modal-title');
   const configModalDesc = document.getElementById('config-modal-desc');
@@ -472,16 +478,18 @@
     const hasSession = entry.activeSessionId;
     const sessionId = hasSession ? escapeHtml(entry.activeSessionId) : '';
     const closeButtonDisabled = !hasSession ? ' disabled' : '';
-    
+
     let html = '<div class="detail-block session-controls-block">';
     html += '<div class="session-controls-row">';
     html += '<label class="session-checkbox-label">';
     html += `<input type="checkbox" class="session-keep-open-checkbox" data-server-id="${escapeAttribute(serverId)}" ${hasSession ? 'checked' : ''}/>`;
-    html += '<span>Keep session open (for multi-step workflows)</span>';
+    const hiddenBadge = entry.sessionHidden ? ' <span class="session-hidden-badge">(hidden)</span>' : '';
+    html += `<span>Keep session open (for multi-step workflows)${hiddenBadge}</span>`;
     html += '</label>';
+    html += `<button type="button" class="session-hide-button secondary" data-server-id="${escapeAttribute(serverId)}"${closeButtonDisabled}>${entry.sessionHidden ? 'Unhide session' : 'Hide session'}</button>`;
     html += `<button type="button" class="session-close-button secondary" data-server-id="${escapeAttribute(serverId)}"${closeButtonDisabled}>Close session</button>`;
     html += '</div>';
-    
+
     if (hasSession) {
       const statusText = entry.sessionReused ? 'Session reused' : 'Session created';
       html += '<div class="session-status active">';
@@ -489,7 +497,7 @@
       html += `<span class="session-status-id">${sessionId}</span>`;
       html += '</div>';
     }
-    
+
     html += '</div>';
     return html;
   }
@@ -669,7 +677,7 @@
       }
       // Add session controls after handshake
       detailSections.push(buildSessionControlsBlock(entry));
-      
+
       if (entry.status === 'ok') {
         detailSections.push(buildToolsBlock(entry));
         detailSections.push(buildPromptsBlock(entry));
@@ -740,6 +748,20 @@
       const entry = servers.find((item) => sanitizeKey(item.id || item.serverName || 'unknown') === serverId);
       if (entry) {
         void handleCloseServerSession(entry);
+      }
+      return;
+    }
+
+    // Handle session hide button (UI-only, does not affect reuse)
+    if (button.classList.contains('session-hide-button')) {
+      const serverId = button.dataset.serverId;
+      const entry = servers.find((item) => sanitizeKey(item.id || item.serverName || 'unknown') === serverId);
+      if (entry && entry.activeSessionId) {
+        entry.sessionHidden = !entry.sessionHidden;
+        renderServers();
+        if (activeToolContext && activeToolContext.entry === entry) {
+          updateModalSessionInfo(entry);
+        }
       }
       return;
     }
@@ -1007,22 +1029,22 @@
     if (!entry.activeSessionId) {
       return;
     }
-    
+
     const sessionId = entry.activeSessionId;
-    
+
     try {
       const response = await fetch('/api/sessions/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId })
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok || !data.ok) {
         throw new Error(data?.error || 'Failed to close session');
       }
-      
+
       entry.activeSessionId = null;
       entry.sessionReused = false;
       renderServers();
@@ -1059,6 +1081,71 @@
     toolModalReport.disabled = true;
     renderArgumentFields(context);
     setModalResult(null);
+    updateModalSessionInfo(context.entry);
+  }
+
+  function updateModalSessionInfo(entry) {
+    if (entry.activeSessionId) {
+      // Show session info
+      toolModalSessionInfo.classList.remove('hidden');
+      toolModalSessionId.textContent = entry.activeSessionId + (entry.sessionHidden ? ' (hidden)' : '');
+
+      // Format creation time
+      if (entry.sessionCreatedAt) {
+        const createdAt = new Date(entry.sessionCreatedAt);
+        toolModalSessionCreated.textContent = createdAt.toLocaleString();
+      } else {
+        toolModalSessionCreated.textContent = 'Unknown';
+      }
+      // Update hide button label
+      if (toolModalHideSession) {
+        toolModalHideSession.textContent = entry.sessionHidden ? 'Unhide Session' : 'Hide Session';
+        toolModalHideSession.disabled = !entry.activeSessionId;
+      }
+    } else {
+      // Hide session info
+      toolModalSessionInfo.classList.add('hidden');
+      if (toolModalHideSession) {
+        toolModalHideSession.textContent = 'Hide Session';
+        toolModalHideSession.disabled = true;
+      }
+    }
+  }
+
+  async function handleModalCloseSession() {
+    if (!activeToolContext) {
+      return;
+    }
+
+    const entry = activeToolContext.entry;
+    if (!entry.activeSessionId) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/sessions/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: entry.activeSessionId })
+      });
+
+      if (response.ok) {
+        // Clear session info from entry
+        entry.activeSessionId = null;
+        entry.sessionCreatedAt = null;
+
+        // Update UI
+        updateModalSessionInfo(entry);
+
+        // Refresh the main server list to update session status there too
+        renderServers();
+      } else {
+        alert('Failed to close session');
+      }
+    } catch (error) {
+      console.error('Error closing session:', error);
+      alert('Error closing session: ' + error.message);
+    }
   }
 
   function openToolModal(entry, toolName) {
@@ -1076,7 +1163,7 @@
       inputId: `tool-arg-${entry.id}-${sanitizeKey(tool.name)}-${sanitizeKey(spec.name)}`
     }));
     const lastArgs = entry.toolTests?.[tool.name]?.lastArgs ?? {};
-    
+
     activeToolContext = {
       entry,
       tool,
@@ -1111,6 +1198,9 @@
         const field = document.getElementById(spec.inputId);
         if (!field) continue;
         const rawValue = field.value;
+
+
+
         const trimmed = typeof rawValue === 'string' ? rawValue.trim() : rawValue;
         if (!trimmed && spec.required) {
           alert(`Argument "${spec.name}" is required.`);
@@ -1184,6 +1274,7 @@
     if (args === null) {
       return;
     }
+
     const { entry, tool } = activeToolContext;
     // Get keepSessionOpen state from the server's checkbox
     const serverId = sanitizeKey(entry.id || entry.serverName || 'unknown');
@@ -1219,16 +1310,18 @@
       if (data.ok) {
         entry.toolTests[tool.name] = { status: 'ok', output: data.output, lastArgs: args };
         activeToolContext.lastArgs = args;
-        
+
         // Handle session info
         if (data.sessionId) {
           entry.activeSessionId = data.sessionId;
           entry.sessionReused = data.sessionReused;
+          entry.sessionCreatedAt = data.sessionCreatedAt;
         } else {
           entry.activeSessionId = null;
           entry.sessionReused = false;
+          entry.sessionCreatedAt = null;
         }
-        
+
         const resultPayload = { ok: true, output: data.output };
         setModalResult(resultPayload);
         const reportData = {
@@ -1255,6 +1348,8 @@
         toolModalReport.disabled = false;
         // Re-render to update session status
         renderServers();
+        // Update modal session info
+        updateModalSessionInfo(entry);
       } else {
         entry.toolTests[tool.name] = {
           status: 'error',
@@ -1604,6 +1699,7 @@
         entry.toolTests = {};
       } else {
         entry.status = 'error';
+
         entry.error = data.error;
         entry.handshake = data.handshake ?? null;
       }
@@ -1622,6 +1718,7 @@
     }
     const context = activeToolContext;
     const stored =
+
       context.reportData ||
       context.entry?.toolTests?.[context.tool.name]?.reportData ||
       null;
@@ -1638,6 +1735,18 @@
     downloadTextFile(filename, content, 'text/markdown;charset=utf-8');
   });
   toolModalClose.addEventListener('click', closeToolModal);
+  toolModalCloseSession.addEventListener('click', handleModalCloseSession);
+  if (toolModalHideSession) {
+    toolModalHideSession.addEventListener('click', () => {
+      if (!activeToolContext) return;
+      const entry = activeToolContext.entry;
+      if (!entry || !entry.activeSessionId) return;
+      entry.sessionHidden = !entry.sessionHidden;
+      updateModalSessionInfo(entry);
+      renderServers();
+    });
+  }
+
   configModalClose.addEventListener('click', closeConfigModal);
   configModalMergeButton.addEventListener('click', () => {
     if (!activeConfigFormat) {

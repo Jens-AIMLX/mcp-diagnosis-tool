@@ -89,6 +89,23 @@
       <div class="modal-content">
         <button type="button" class="modal-close" id="tool-modal-close" aria-label="Close">×</button>
         <h3 id="tool-modal-title">Test Tool</h3>
+        <div id="tool-modal-session-info" class="modal-session-info hidden">
+          <div class="session-info-header">
+            <span class="session-info-label">Active Session:</span>
+            <button type="button" id="tool-modal-hide-session" class="session-hide-button secondary">Hide Session</button>
+            <button type="button" id="tool-modal-close-session" class="session-close-button">Close Session</button>
+          </div>
+          <div class="session-info-details">
+            <div class="session-info-item">
+              <span class="session-info-key">ID:</span>
+              <span id="tool-modal-session-id" class="session-info-value"></span>
+            </div>
+            <div class="session-info-item">
+              <span class="session-info-key">Created:</span>
+              <span id="tool-modal-session-created" class="session-info-value"></span>
+            </div>
+          </div>
+        </div>
         <div id="tool-modal-body" class="modal-body"></div>
         <div class="modal-actions">
           <button type="button" id="tool-modal-submit">Run Tool</button>

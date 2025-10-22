@@ -1,14 +1,14 @@
 # Session Management Feature
 
 ## Overview
-This feature allows the MCP Diagnosis Tool to keep MCP server sessions (like Playwright browsers) open across multiple tool calls, enabling multi-step workflows.
+This feature allows the MCP Diagnosis Tool to keep MCP server sessions (like Playwright browsers) open across multiple tool calls, enabling multi-step workflows. **This is a major feature in version 1.1.**
 
 ## What Was Implemented
 
 ### Backend (mcpDoctor.js & server.js)
 
 1. **Session Store**: Global Map that stores active MCP client connections
-   - Key: unique sessionId
+   - Key: unique sessionId (format: `{transport}-{command}-{timestamp}-{random}`)
    - Value: { client, transportName, handshake, spec, createdAt }
 
 2. **Session Management Functions**:
@@ -29,24 +29,33 @@ This feature allows the MCP Diagnosis Tool to keep MCP server sessions (like Pla
    - `POST /api/sessions/close-all` - Close all sessions
    - Updated `POST /api/tools/call` to accept `keepSessionOpen` flag
 
+5. **Enhanced Logging**:
+   - Structured JSON logging to `server.debug.log`
+   - Console logging with `[DEBUG]` prefixes in `server.log`
+   - Logs session creation, reuse, tool calls, and session closure
+   - Timestamps and full session parameters captured
+
 ### Frontend (index.html, script.js, style.css)
 
-1. **UI Components** (in tool modal):
-   - Checkbox: "Keep session open (for multi-step workflows)"
+1. **UI Components** (at server level, next to handshake):
+   - Checkbox: "Keep session open (for multi-step workflows)" (shows "(hidden)" when the session is hidden)
    - Session status display showing:
      - Session creation status (new/reused)
      - Session ID
-   - "Close Session" button
+   - "Hide Session" button (toggles a visual hidden state; the session is still reused when kept open)
+   - "Close Session" button (enabled when session active)
 
 2. **JavaScript Functions**:
-   - `updateSessionStatus(entry, sessionId, sessionReused)` - Updates UI to show session state
-   - `handleCloseSession()` - Closes active session via API
-   - Updated `submitToolModal()` to pass `keepSessionOpen` flag
-   - Updated `openToolModal()` to restore session state
+   - `buildSessionControlsBlock(entry)` - Generates session control HTML
+   - `handleCloseServerSession(entry)` - Closes active session via API
+   - Updated `submitToolModal()` to read `keepSessionOpen` from server checkbox
+   - Updated `renderServers()` to show session status and update button states
 
 3. **CSS Styling**:
-   - `.modal-session-control` - Container for session controls
+   - `.session-controls-block` - Container for session controls
+   - `.session-controls-row` - Row layout for checkbox and button
    - `.session-checkbox-label` - Checkbox styling
+   - `.session-close-button` - Close button styling (disabled state)
    - `.session-status` - Session status display (green when active)
    - `.session-status-label` & `.session-status-id` - Status text styling
 
@@ -55,14 +64,15 @@ This feature allows the MCP Diagnosis Tool to keep MCP server sessions (like Pla
 ### User Workflow
 
 1. **Enable Session Persistence**:
-   - User opens a tool modal
-   - Checks "Keep session open" checkbox
-   - Runs a tool (e.g., `browser_navigate`)
+   - User loads config and expands a server (e.g., Playwright)
+   - Checks "Keep session open" checkbox (next to handshake section)
+   - Opens a tool modal and runs a tool (e.g., `browser_navigate`)
 
 2. **Session Created**:
    - MCP client connection stays open
-   - Session ID displayed in modal
+   - Session ID displayed in server details
    - Green status indicator shows "New session created"
+   - "Close Session" button becomes enabled
 
 3. **Run Multiple Tools**:
    - User runs another tool (e.g., `browser_type`)
@@ -74,6 +84,7 @@ This feature allows the MCP Diagnosis Tool to keep MCP server sessions (like Pla
    - User clicks "Close Session" button
    - Browser/server closes
    - Session status clears
+   - "Close Session" button becomes disabled
 
 ### Technical Flow
 
@@ -155,15 +166,44 @@ No additional flags needed - the session management is handled by the diagnosis 
 
 ## Testing
 
-1. Start the server: `node server.js`
-2. Open http://localhost:3000
-3. Load your config file
-4. Open a tool (e.g., `browser_navigate`)
-5. Check "Keep session open"
-6. Run the tool
-7. Notice the browser stays open and session status appears
-8. Run another tool - session will be reused
-9. Click "Close Session" to terminate
+1. Start the server: `.\start.bat` (or `node server.js`)
+2. Open http://localhost:3060
+3. Load your config file (e.g., `test/mcp-config-qa.json`)
+4. Expand the Playwright server
+5. Check "Keep session open" checkbox (next to handshake section)
+6. Open a tool (e.g., `browser_navigate`) and run it
+7. Notice the browser stays open and session status appears in server details
+8. Run another tool - session will be reused automatically
+9. Click "Close Session" to terminate the browser
+
+## Logging and Debugging
+
+The system provides comprehensive logging for debugging:
+
+### server.log
+Contains human-readable debug output:
+```
+[DEBUG] tool_call_begin browser_navigate keep=true
+[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+```
+
+### server.debug.log
+Contains structured JSON logs:
+```json
+{"ts":"2025-10-21T21:59:02.234Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest",...]},"args":{"url":"https://example.com"}}
+{"ts":"2025-10-21T21:59:02.235Z","event":"session_reuse","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest",...]}
+{"ts":"2025-10-21T21:59:03.296Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","spec":{...},"endedAt":"2025-10-21T21:59:03.296Z"}
+{"ts":"2025-10-21T21:59:03.297Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-21T21:59:03.296Z"}
+```
+
+### Key Log Events
+- `session_created` - New session established with full spec and parameters
+- `session_reuse` - Existing session reused for subsequent tool calls
+- `tool_call_begin` - Tool execution started with session context
+- `tool_call_success` - Tool completed successfully with session info
+- `tool_call_end` - Tool execution finished with session state
+- `session_closed` - Session terminated and cleaned up
 
 ## API Reference
 

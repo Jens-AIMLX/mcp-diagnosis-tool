@@ -24,6 +24,7 @@ MCP Diagnosis Tool is a browser-based utility for inspecting [Model Context Prot
 - **Tool tester** that renders argument schemas, gathers inputs via modal forms, runs the tool, and generates Markdown reports (including timing and output).
 - **Config management UI** that loads `mcp.json` or Codex `config.toml`, merges additional snippets, and exports either format—perfect for format conversion workflows.
 - **Backend normalisation** ensuring consistent data structures, deterministic merges, and format-preserving exports.
+- **🆕 Session Management (v1.1)** - Keep MCP server sessions (like Playwright browsers) open across multiple tool calls for multi-step workflows. Includes server-level session controls, comprehensive logging, automatic session reuse, and a "Hide Session" button to temporarily hide a session in the UI (still reused).
 
 ## Quick start
 
@@ -129,6 +130,22 @@ Serialisers rebuild the exact JSON or TOML schema on export, so you can round-tr
 
 Reports are perfect for audits or sharing diagnostics with teammates.
 
+### Session Management (v1.1)
+
+See SESSION_MANAGEMENT.md for full details.
+
+For multi-step workflows (like browser automation), enable session persistence:
+
+1. **Enable Session**: Check "Keep session open" next to the handshake section for any server
+2. **Run Tools**: Execute tools normally - the session will be reused automatically
+3. **Monitor Status**: See session ID and reuse status in the server details
+4. **Hide (Optional)**: Click "Hide Session" to mark the active session as hidden in the UI; hidden sessions are still reused automatically when "Keep session open" is checked
+5. **Close When Done**: Click "Close Session" to terminate the connection
+
+**Perfect for Playwright workflows**: Navigate → Type → Click → Submit without browser closing between steps.
+
+**Logging**: Comprehensive debug logs in `server.log` and structured JSON in `server.debug.log` show session lifecycle, tool calls, and timing.
+
 ## REST API
 
 Behind the UI is an Express API you can integrate programmatically:
@@ -139,7 +156,10 @@ Behind the UI is an Express API you can integrate programmatically:
 | `/api/config/diagnose` | POST | Normalise and diagnose an MCP config (`configText`, optional `configFormat`). Returns normalized config + per-server results. |
 | `/api/config/add-server` | POST | Merge a config snippet into an existing normalized config (`baseConfig`, `additionText`, `additionFormat`). |
 | `/api/config/export` | POST | Convert normalized config to JSON or TOML (`targetFormat`). |
-| `/api/tools/call` | POST | Invoke `tools/call` on a spec (same payload as `/api/diagnose` plus `toolName`, `toolArgs`). |
+| `/api/tools/call` | POST | Invoke `tools/call` on a spec (same payload as `/api/diagnose` plus `toolName`, `toolArgs`, `keepSessionOpen`). |
+| `/api/sessions` | GET | List all active sessions. |
+| `/api/sessions/close` | POST | Close a specific session by ID. |
+| `/api/sessions/close-all` | POST | Close all active sessions. |
 
 Responses follow the same shapes used in the UI. See `server.js` for full request/response details.
 
@@ -154,6 +174,18 @@ Responses follow the same shapes used in the UI. See `server.js` for full reques
 - **Tests** – `node:test` suite in `test/mcpDoctor.test.js` covering parsing, merging, and diagnostics.
 
 ## Version history
+
+### 1.1.0
+
+- **🆕 Session Management**: Added server-level session controls to keep MCP server connections (like Playwright browsers) open across multiple tool calls.
+- "Hide Session" button next to "Close Session" in both the server panel and tool modal; hidden sessions are indicated in UI and remain eligible for automatic reuse.
+
+- **Multi-step Workflows**: Enable complex automation sequences (navigate → type → click → submit) without losing browser state.
+- **Session Controls**: "Keep session open" checkbox and "Close session" button at the server level for intuitive session management.
+- **Automatic Session Reuse**: Sessions are automatically reused for subsequent tool calls on the same server.
+- **Enhanced Logging**: Comprehensive debug logging with structured JSON output in `server.debug.log` and human-readable logs in `server.log`.
+- **New API Endpoints**: Added `/api/sessions`, `/api/sessions/close`, and `/api/sessions/close-all` for programmatic session management.
+- **Session Lifecycle Tracking**: Full visibility into session creation, reuse, tool execution, and closure with timestamps and detailed parameters.
 
 ### 1.0.1
 
@@ -170,6 +202,6 @@ Responses follow the same shapes used in the UI. See `server.js` for full reques
 
 ## Disclaimer
 
-This utility depends on the stability of MCP server implementations and the `@modelcontextprotocol/sdk`. It’s best-effort and may need adjustments to match server-specific behaviours (timeouts, transports, schema variations). Contributions and issue reports are welcome!  
+This utility depends on the stability of MCP server implementations and the `@modelcontextprotocol/sdk`. It’s best-effort and may need adjustments to match server-specific behaviours (timeouts, transports, schema variations). Contributions and issue reports are welcome!
 
 Happy diagnosing! 🚀

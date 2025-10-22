@@ -293,11 +293,17 @@ app.get('*', (_req, res) => {
 app.listen(PORT, () => {
   console.log(`MCP diagnosis UI server is running on http://localhost:${PORT}`);
   log('server_listening', { port: Number(PORT) });
-  // Kick off a self-test to exercise logging without external clients
-  log('selftest_scheduled', { delayMs: 1500 });
-  setTimeout(runSelfTestLogging, 1500);
-  log('selftest_followup_scheduled', { delayMs: 4500 });
-  setTimeout(runSelfTestFollowUp, 4500);
+  // Optional self-tests (disabled by default). Enable by setting MCP_SELFTEST=1 or MCP_SELFTEST=true
+  const selftestFlag = String(process.env.MCP_SELFTEST || '').toLowerCase();
+  const enableSelftest = selftestFlag === '1' || selftestFlag === 'true';
+  if (enableSelftest) {
+    log('selftest_scheduled', { delayMs: 1500 });
+    setTimeout(runSelfTestLogging, 1500);
+    log('selftest_followup_scheduled', { delayMs: 4500 });
+    setTimeout(runSelfTestFollowUp, 4500);
+  } else {
+    log('selftest_skipped', { reason: 'disabled', env: process.env.MCP_SELFTEST || null });
+  }
 });
 
 // Global unhandled error logging
@@ -327,7 +333,7 @@ async function runSelfTestLogging() {
     };
     log('selftest_begin', {});
     // Intentionally call a non-existing tool to force error path while exercising connect/session
-    const result = await callTool(spec, 'nonexistent_tool_for_logging', {}, { keepSessionOpen: true });
+    const result = await callTool(spec, 'nonexistent_tool_for_logging', {}, { keepSessionOpen: false });
     log('selftest_result', { ok: result?.ok, sessionId: result?.sessionId || null, transport: result?.transport || null });
     try { process.stdout.write(`[DEBUG] selftest_done ok=${result?.ok}\n`); } catch(_) {}
   } catch (err) {
@@ -353,7 +359,7 @@ async function runSelfTestFollowUp() {
       ]
     };
     log('selftest_followup_begin', {});
-    const result = await callTool(spec, 'browser_snapshot', {}, { keepSessionOpen: true });
+    const result = await callTool(spec, 'browser_snapshot', {}, { keepSessionOpen: false });
     log('selftest_followup_result', { ok: result?.ok, sessionId: result?.sessionId || null, transport: result?.transport || null });
     try { process.stdout.write(`[DEBUG] selftest_followup_done ok=${result?.ok}\n`); } catch(_) {}
   } catch (err) {
