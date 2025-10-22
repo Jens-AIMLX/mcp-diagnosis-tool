@@ -296,6 +296,8 @@ app.listen(PORT, () => {
   // Kick off a self-test to exercise logging without external clients
   log('selftest_scheduled', { delayMs: 1500 });
   setTimeout(runSelfTestLogging, 1500);
+  log('selftest_followup_scheduled', { delayMs: 4500 });
+  setTimeout(runSelfTestFollowUp, 4500);
 });
 
 // Global unhandled error logging
@@ -331,6 +333,32 @@ async function runSelfTestLogging() {
   } catch (err) {
     try { process.stderr.write(`[DEBUG] selftest_error ${err?.message}\n`); } catch(_) {}
     logError('selftest_error', err);
+  }
+}
+
+async function runSelfTestFollowUp() {
+  try {
+    try { process.stdout.write('[DEBUG] selftest_followup_begin\n'); } catch(_) {}
+    const spec = {
+      mode: 'stdio',
+      command: 'npx',
+      args: [
+        '-y',
+        '@playwright/mcp@latest',
+        '--output-dir', 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots',
+        '--save-session', '--save-trace',
+        '--browser', 'chrome',
+        '--viewport-size', '2400,1350',
+        '--isolated', '--no-sandbox'
+      ]
+    };
+    log('selftest_followup_begin', {});
+    const result = await callTool(spec, 'browser_snapshot', {}, { keepSessionOpen: true });
+    log('selftest_followup_result', { ok: result?.ok, sessionId: result?.sessionId || null, transport: result?.transport || null });
+    try { process.stdout.write(`[DEBUG] selftest_followup_done ok=${result?.ok}\n`); } catch(_) {}
+  } catch (err) {
+    try { process.stderr.write(`[DEBUG] selftest_followup_error ${err?.message}\n`); } catch(_) {}
+    logError('selftest_followup_error', err);
   }
 }
 

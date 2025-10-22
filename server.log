@@ -20,3 +20,112 @@ Session: C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\session-1761082
 [DEBUG_JSON] {"ts":"2025-10-21T21:28:14.457Z","event":"tool_call_end","toolName":"nonexistent_tool_for_logging","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-21T21:28:14.456Z"}
 [DEBUG_JSON] {"ts":"2025-10-21T21:28:14.457Z","event":"selftest_result","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","transport":"stdio"}
 [DEBUG] selftest_done ok=true
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:15.423Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:15.445Z","event":"http_request","method":"GET","url":"/style.css","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:15.446Z","event":"http_request","method":"GET","url":"/script.js","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:15.515Z","event":"http_request","method":"GET","url":"/favicon.ico","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:26.257Z","event":"http_request","method":"POST","url":"/api/config/diagnose","bodyKeys":["configText","configFormat"]}
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:27.909Z","event":"connect_success","mode":"stdio","command":"npx","transport":"stdio"}
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:28.082Z","event":"connect_success","mode":"stdio","command":"node","transport":"stdio"}
+Hello World MCP Server running on stdio
+[DEBUG_JSON] {"ts":"2025-10-21T21:58:28.270Z","event":"connect_success","mode":"stdio","command":"C:/Users/jenss/ONEDRI~2/Code/source/AIServer/BPMX_MCP/node_modules/.bin/mcp-hello-world.cmd","transport":"stdio"}
+[DEBUG_JSON] {"ts":"2025-10-21T21:59:02.233Z","event":"http_request","method":"POST","url":"/api/tools/call","bodyKeys":["spec","toolName","toolArgs","keepSessionOpen"]}
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG_JSON] {"ts":"2025-10-21T21:59:02.234Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"http://localhost:3002/settings"}}
+[DEBUG_JSON] {"ts":"2025-10-21T21:59:02.234Z","event":"tool_call_begin","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"http://localhost:3002/settings"}}
+[DEBUG] tool_call_begin browser_navigate keep=true
+[DEBUG_JSON] {"ts":"2025-10-21T21:59:02.235Z","event":"session_reuse","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]}
+
+Trace viewer listening on http://localhost:54657/trace/index.html?trace=C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\traces/trace.json
+[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG_JSON] {"ts":"2025-10-21T21:59:03.296Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-21T21:59:03.296Z"}
+[DEBUG_JSON] {"ts":"2025-10-21T21:59:03.297Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-21T21:59:03.296Z"}
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG_JSON] {"ts":"2025-10-21T21:59:03.297Z","event":"tools_call_response","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","error":null,"endedAt":"2025-10-21T21:59:03.297Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:47.957Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:47.986Z","event":"http_request","method":"GET","url":"/style.css","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:47.989Z","event":"http_request","method":"GET","url":"/script.js","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:48.131Z","event":"http_request","method":"GET","url":"/favicon.ico","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:54.129Z","event":"http_request","method":"POST","url":"/api/config/diagnose","bodyKeys":["configText","configFormat"]}
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:56.252Z","event":"connect_success","mode":"stdio","command":"npx","transport":"stdio"}
+npm notice
+npm notice New major version of npm available! 10.9.2 -> 11.6.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.6.2
+npm notice To update run: npm install -g npm@11.6.2
+npm notice
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:56.493Z","event":"connect_success","mode":"stdio","command":"node","transport":"stdio"}
+Hello World MCP Server running on stdio
+[DEBUG_JSON] {"ts":"2025-10-22T01:33:56.725Z","event":"connect_success","mode":"stdio","command":"C:/Users/jenss/ONEDRI~2/Code/source/AIServer/BPMX_MCP/node_modules/.bin/mcp-hello-world.cmd","transport":"stdio"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:17.341Z","event":"http_request","method":"POST","url":"/api/tools/call","bodyKeys":["spec","toolName","toolArgs","keepSessionOpen"]}
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:17.343Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:17.343Z","event":"tool_call_begin","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG] tool_call_begin browser_navigate keep=true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:17.344Z","event":"session_reuse","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]}
+
+Trace viewer listening on http://localhost:63433/trace/index.html?trace=C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\traces/trace.json
+[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:18.968Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-22T01:34:18.968Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:18.969Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-22T01:34:18.968Z"}
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:18.969Z","event":"tools_call_response","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","error":null,"endedAt":"2025-10-22T01:34:18.969Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:45.524Z","event":"http_request","method":"POST","url":"/api/tools/call","bodyKeys":["spec","toolName","toolArgs","keepSessionOpen"]}
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:45.525Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:45.526Z","event":"tool_call_begin","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG] tool_call_begin browser_navigate keep=true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:45.526Z","event":"session_reuse","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]}
+[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:45.597Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-22T01:34:45.597Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:45.598Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-22T01:34:45.597Z"}
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:45.598Z","event":"tools_call_response","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","error":null,"endedAt":"2025-10-22T01:34:45.598Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:49.733Z","event":"http_request","method":"POST","url":"/api/tools/call","bodyKeys":["spec","toolName","toolArgs","keepSessionOpen"]}
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:49.733Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:49.734Z","event":"tool_call_begin","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG] tool_call_begin browser_navigate keep=true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:49.734Z","event":"session_reuse","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]}
+[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:49.817Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-22T01:34:49.817Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:49.818Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-22T01:34:49.817Z"}
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:34:49.818Z","event":"tools_call_response","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","error":null,"endedAt":"2025-10-22T01:34:49.818Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:00.708Z","event":"http_request","method":"POST","url":"/api/tools/call","bodyKeys":["spec","toolName","toolArgs","keepSessionOpen"]}
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:00.709Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:00.709Z","event":"tool_call_begin","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"https://example.com"}}
+[DEBUG] tool_call_begin browser_navigate keep=true
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:00.710Z","event":"session_reuse","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]}
+
+Trace viewer listening on http://localhost:49455/trace/index.html?trace=C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\traces/trace.json
+[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:01.950Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-22T01:35:01.950Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:01.951Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-22T01:35:01.950Z"}
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:01.952Z","event":"tools_call_response","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","error":null,"endedAt":"2025-10-22T01:35:01.952Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:25.168Z","event":"http_request","method":"POST","url":"/api/tools/call","bodyKeys":["spec","toolName","toolArgs","keepSessionOpen"]}
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:25.169Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"http://localhost:3002/"}}
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:25.170Z","event":"tool_call_begin","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"http://localhost:3002/"}}
+[DEBUG] tool_call_begin browser_navigate keep=true
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:25.170Z","event":"session_reuse","sessionId":"stdio-npx-1761082094450-0eqxpxo","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]}
+
+Trace viewer listening on http://localhost:49229/trace/index.html?trace=C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\traces/trace.json
+[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761082094450-0eqxpxo
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:26.268Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-22T01:35:26.268Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:26.268Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761082094450-0eqxpxo","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-22T01:35:26.268Z"}
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761082094450-0eqxpxo, sessionReused: true
+[DEBUG_JSON] {"ts":"2025-10-22T01:35:26.269Z","event":"tools_call_response","ok":true,"sessionId":"stdio-npx-1761082094450-0eqxpxo","sessionReused":true,"transport":"stdio","error":null,"endedAt":"2025-10-22T01:35:26.269Z"}
