@@ -722,13 +722,12 @@
           void handleCloseServerSession(entry);
         }
         if (checkbox.checked && entry.sessionHidden) {
-          // Unhide and immediately warm up session so it is open before next tool
+          // Unhide immediately when reactivating keep-open on a hidden session
           entry.sessionHidden = false;
           renderServers();
           if (activeToolContext && activeToolContext.entry === entry) {
             updateModalSessionInfo(entry);
           }
-          void warmUpSession(entry);
         }
       }
     }
@@ -1159,73 +1158,6 @@
       }
       const stateEl = document.getElementById('tool-modal-session-state');
       if (stateEl) stateEl.textContent = '';
-    }
-  }
-
-
-  // Auto-warm session by calling a safe no-arg tool (e.g., browser_snapshot)
-  function selectWarmupTool(entry) {
-    try {
-      const tools = entry?.result?.tools || [];
-      if (!Array.isArray(tools) || !tools.length) return null;
-      const preferred = tools.find((t) => t && t.name === 'browser_snapshot');
-      if (preferred) return preferred.name;
-      const noRequired = tools.find((t) => {
-        if (!t) return false;
-        const sch = t.inputSchema;
-        if (!sch || typeof sch !== 'object') return true; // no schema means no required args
-        if (sch.type && sch.type !== 'object') return true; // non-object schema -> treat as no required
-        const req = Array.isArray(sch.required) ? sch.required : [];
-        return req.length === 0;
-      });
-      return noRequired ? noRequired.name : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  async function warmUpSession(entry) {
-    const toolName = selectWarmupTool(entry);
-    if (!toolName) {
-      // No suitable tool to warm up; just unhide UI state
-      entry.sessionHidden = false;
-      renderServers();
-      if (activeToolContext && activeToolContext.entry === entry) {
-        updateModalSessionInfo(entry);
-      }
-      return;
-    }
-    try {
-      const response = await fetch('/api/tools/call', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spec: entry.spec, toolName, toolArgs: {}, keepSessionOpen: true })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.ok === false) {
-        throw new Error(data?.error?.details || 'Failed to warm up session');
-      }
-      if (data.sessionId) {
-        entry.activeSessionId = data.sessionId;
-        entry.sessionReused = !!data.sessionReused;
-        entry.sessionCreatedAt = data.sessionCreatedAt || new Date().toISOString();
-      }
-      // Clear hidden markers
-      entry.sessionHidden = false;
-      entry.hiddenSessionId = null;
-      entry.hiddenSessionCreatedAt = null;
-      renderServers();
-      if (activeToolContext && activeToolContext.entry === entry) {
-        updateModalSessionInfo(entry);
-      }
-    } catch (err) {
-      console.error('Warm-up session failed:', err);
-      // Still unhide UI, but no active session
-      entry.sessionHidden = false;
-      renderServers();
-      if (activeToolContext && activeToolContext.entry === entry) {
-        updateModalSessionInfo(entry);
-      }
     }
   }
 

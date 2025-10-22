@@ -59,6 +59,13 @@ This feature allows the MCP Diagnosis Tool to keep MCP server sessions (like Pla
    - `.session-status` - Session status display (green when active)
    - `.session-status-label` & `.session-status-id` - Status text styling
 
+
+### Hidden vs Open
+
+- Hidden indicates the session is visually hidden in the UI. Pressing "Hide Session" will close the current browser window (terminates the active session) while keeping the server entry marked as hidden.
+- Hidden sessions are still considered for reuse semantics: when you run a tool again with "Keep session open" checked, a fresh session will be created and then reused for subsequent calls.
+- Both the server card and the tool modal show "State: Hidden" or "State: Open" and align the display (ID, Created, State).
+
 ## How It Works
 
 ### User Workflow
