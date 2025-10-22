@@ -3,34 +3,26 @@
 > node server.js
 
 [DEBUG_SIGNATURE] server.js loaded (enhanced logging)
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:33.246Z","event":"server_start","port":3060,"logPath":"C:\\Users\\jenss\\OneDrive - Singularyt UG\\Code\\source\\AIServer\\mcp-diagnosis-tool\\server.debug.log"}
+[DEBUG_JSON] {"ts":"2025-10-22T15:05:53.088Z","event":"server_start","port":3060,"logPath":"C:\\Users\\jenss\\OneDrive - Singularyt UG\\Code\\source\\AIServer\\mcp-diagnosis-tool\\server.debug.log"}
 MCP diagnosis UI server is running on http://localhost:3060
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:33.252Z","event":"server_listening","port":3060}
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:33.252Z","event":"selftest_skipped","reason":"disabled","env":null}
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:33.397Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:50.391Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:50.486Z","event":"http_request","method":"GET","url":"/style.css","bodyKeys":[]}
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:50.488Z","event":"http_request","method":"GET","url":"/script.js","bodyKeys":[]}
-[DEBUG_JSON] {"ts":"2025-10-22T12:43:50.584Z","event":"http_request","method":"GET","url":"/favicon.ico","bodyKeys":[]}
-[DEBUG_JSON] {"ts":"2025-10-22T12:44:03.691Z","event":"http_request","method":"POST","url":"/api/config/diagnose","bodyKeys":["configText","configFormat"]}
-[DEBUG_JSON] {"ts":"2025-10-22T12:44:05.742Z","event":"connect_success","mode":"stdio","command":"npx","transport":"stdio"}
-[DEBUG_JSON] {"ts":"2025-10-22T12:44:05.957Z","event":"connect_success","mode":"stdio","command":"node","transport":"stdio"}
+[DEBUG_JSON] {"ts":"2025-10-22T15:05:53.094Z","event":"server_listening","port":3060}
+[DEBUG_JSON] {"ts":"2025-10-22T15:05:53.095Z","event":"selftest_skipped","reason":"disabled","env":null}
+[DEBUG_JSON] {"ts":"2025-10-22T15:05:53.225Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:06:12.258Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:06:12.297Z","event":"http_request","method":"GET","url":"/script.js","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:06:12.299Z","event":"http_request","method":"GET","url":"/style.css","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:06:12.426Z","event":"http_request","method":"GET","url":"/favicon.ico","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:08:30.388Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:08:30.414Z","event":"http_request","method":"GET","url":"/style.css","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:08:30.416Z","event":"http_request","method":"GET","url":"/script.js","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:08:30.491Z","event":"http_request","method":"GET","url":"/favicon.ico","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:14:19.189Z","event":"http_request","method":"GET","url":"/","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:14:19.201Z","event":"http_request","method":"GET","url":"/style.css","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:14:19.203Z","event":"http_request","method":"GET","url":"/script.js","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:14:19.329Z","event":"http_request","method":"GET","url":"/favicon.ico","bodyKeys":[]}
+[DEBUG_JSON] {"ts":"2025-10-22T15:15:46.496Z","event":"http_request","method":"POST","url":"/api/config/diagnose","bodyKeys":["configText","configFormat"]}
+error: unknown option '--headful'
+[DEBUG_JSON] {"ts":"2025-10-22T15:15:48.685Z","event":"connect_error","level":"error","error":{"message":"MCP error -32000: Connection closed","code":-32000,"stack":"McpError: MCP error -32000: Connection closed\n    at Client._onclose (C:\\Users\\jenss\\OneDrive - Singularyt UG\\Code\\source\\AIServer\\mcp-diagnosis-tool\\node_modules\\@modelcontextprotocol\\sdk\\dist\\cjs\\shared\\protocol.js:113:23)\n    at _transport.onclose (C:\\Users\\jenss\\OneDrive - Singularyt UG\\Code\\source\\AIServer\\mcp-diagnosis-tool\\node_modules\\@modelcontextprotocol\\sdk\\dist\\cjs\\shared\\protocol.js:80:18)\n    at ChildProcess.<anonymous> (C:\\Users\\jenss\\OneDrive - Singularyt UG\\Code\\source\\AIServer\\mcp-diagnosis-tool\\node_modules\\@modelcontextprotocol\\sdk\\dist\\cjs\\client\\stdio.js:102:77)\n    at ChildProcess.emit (node:events:518:28)\n    at cp.emit (C:\\Users\\jenss\\OneDrive - Singularyt UG\\Code\\source\\AIServer\\mcp-diagnosis-tool\\node_modules\\cross-spawn\\lib\\enoent.js:34:29)\n    at maybeClose (node:internal/child_process:1101:16)\n    at ChildProcess._handle.onexit (node:internal/child_process:304:5)"},"mode":"stdio","command":"npx"}
+[DEBUG_JSON] {"ts":"2025-10-22T15:15:48.867Z","event":"connect_success","mode":"stdio","command":"node","transport":"stdio"}
 Hello World MCP Server running on stdio
-[DEBUG_JSON] {"ts":"2025-10-22T12:44:06.274Z","event":"connect_success","mode":"stdio","command":"C:/Users/jenss/ONEDRI~2/Code/source/AIServer/BPMX_MCP/node_modules/.bin/mcp-hello-world.cmd","transport":"stdio"}
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:15.519Z","event":"http_request","method":"POST","url":"/api/tools/call","bodyKeys":["spec","toolName","toolArgs","keepSessionOpen"]}
-[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
-[DEBUG] /api/tools/call - toolName: browser_navigate, keepSessionOpen: true
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:15.521Z","event":"tools_call_request","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"http://localhost:3002/"}}
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:15.522Z","event":"tool_call_begin","toolName":"browser_navigate","keepSessionOpen":true,"spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"args":{"url":"http://localhost:3002/"}}
-[DEBUG] tool_call_begin browser_navigate keep=true
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:17.402Z","event":"connect_success","mode":"stdio","command":"npx","transport":"stdio"}
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:17.403Z","event":"session_created","sessionId":"stdio-npx-1761137177402-kwxrogn","mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"],"transport":"stdio","createdAt":"2025-10-22T12:46:17.403Z","protocolVersion":"negotiated"}
-Session: C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\session-1761137177407
-
-Trace viewer listening on http://localhost:53543/trace/index.html?trace=C:\Users\jenss\ONEDRI~2\Code\Test\.evidence\screenshots\traces/trace.json
-[DEBUG] tool_call_success browser_navigate sessionId=stdio-npx-1761137177402-kwxrogn
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:19.612Z","event":"tool_call_success","toolName":"browser_navigate","sessionId":"stdio-npx-1761137177402-kwxrogn","sessionReused":false,"transport":"stdio","spec":{"mode":"stdio","command":"npx","args":["-y","@playwright/mcp@latest","--output-dir","C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots","--save-session","--save-trace","--browser","chrome","--viewport-size","2400,1350","--isolated","--no-sandbox"]},"endedAt":"2025-10-22T12:46:19.612Z"}
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:19.613Z","event":"tool_call_end","toolName":"browser_navigate","sessionId":"stdio-npx-1761137177402-kwxrogn","keepSessionOpen":true,"closed":false,"endedAt":"2025-10-22T12:46:19.612Z"}
-[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761137177402-kwxrogn, sessionReused: false
-[DEBUG] callTool result - ok: true, sessionId: stdio-npx-1761137177402-kwxrogn, sessionReused: false
-[DEBUG_JSON] {"ts":"2025-10-22T12:46:19.614Z","event":"tools_call_response","ok":true,"sessionId":"stdio-npx-1761137177402-kwxrogn","sessionReused":false,"transport":"stdio","error":null,"endedAt":"2025-10-22T12:46:19.614Z"}
+[DEBUG_JSON] {"ts":"2025-10-22T15:15:49.210Z","event":"connect_success","mode":"stdio","command":"C:/Users/jenss/ONEDRI~2/Code/source/AIServer/BPMX_MCP/node_modules/.bin/mcp-hello-world.cmd","transport":"stdio"}

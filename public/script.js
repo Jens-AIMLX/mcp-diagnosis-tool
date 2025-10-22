@@ -243,6 +243,7 @@
         error: result.ok ? null : result.error,
         handshake,
         toolTests: {},
+        callHistory: [],
         configSnippets,
         configSnippetFormat: defaultFormat,
         configSnippetEditing: false,
@@ -489,6 +490,7 @@
     html += '</label>';
     html += `<button type="button" class="session-hide-button secondary" data-server-id="${escapeAttribute(serverId)}"${hideButtonDisabled}>Hide session</button>`;
     html += `<button type="button" class="session-close-button secondary" data-server-id="${escapeAttribute(serverId)}"${closeButtonDisabled}>Close session</button>`;
+    html += `<button type="button" class="session-export-button" data-server-id="${escapeAttribute(serverId)}">Export session as…</button>`;
     html += '</div>';
 
     if (hasSession || entry.sessionHidden) {
@@ -808,6 +810,23 @@
       }
       return;
     }
+    // Handle session export button
+    if (button.classList.contains('session-export-button')) {
+      const serverId = button.dataset.serverId;
+      const entry = servers.find((item) => sanitizeKey(item.id || item.serverName || 'unknown') === serverId);
+      if (!entry) {
+        alert('Unable to locate server entry for export.');
+        return;
+      }
+      try {
+        await exportSessionForEntry(entry);
+      } catch (e) {
+        console.error('Export failed:', e);
+        alert(`Export failed: ${e.message || e}`);
+      }
+      return;
+    }
+
 
     const action = button.dataset.configAction;
     if (!action || !entry) {
@@ -943,6 +962,337 @@
       setLoadingConfig(false);
     }
   }
+  // Record a tool call into session history
+  function appendCallHistory(entry, rec) {
+    try {
+      if (!entry.callHistory) entry.callHistory = [];
+      const copy = {
+        toolName: rec.toolName,
+        args: rec.args ? JSON.parse(JSON.stringify(rec.args)) : {},
+        keepSessionOpen: !!rec.keepSessionOpen,
+        startedAt: rec.startedAt || new Date().toISOString(),
+        finishedAt: rec.finishedAt || null,
+        success: !!rec.success,
+        warmup: !!rec.warmup
+      };
+      entry.callHistory.push(copy);
+    } catch (_) {
+      // best-effort; ignore serialization errors
+    }
+  }
+
+  // YAML builder that uses single quotes for strings
+  function yamlEscape(str) {
+    return String(str).replace(/'/g, "''");
+  }
+  function yamlScalar(v) {
+    if (typeof v === 'string') return `'${yamlEscape(v)}'`;
+    if (typeof v === 'boolean') return v ? 'true' : 'false';
+    if (v === null || v === undefined) return 'null';
+    if (typeof v === 'number' || typeof v === 'bigint') return String(v);
+    return `'${yamlEscape(String(v))}'`;
+  }
+  function toSingleQuotedYAML(value, indent = 0) {
+    const pad = '  '.repeat(indent);
+    if (Array.isArray(value)) {
+      if (value.length === 0) return pad + '[]';
+      return value.map(item => {
+        if (item && typeof item === 'object') {
+          return `${pad}-\n${toSingleQuotedYAML(item, indent + 1)}`;
+        } else {
+          return `${pad}- ${yamlScalar(item)}`;
+        }
+      }).join('\n');
+    }
+    if (value && typeof value === 'object') {
+      const keys = Object.keys(value);
+      if (keys.length === 0) return pad + '{}';
+      return keys.map(k => {
+        const v = value[k];
+        const key = /^[A-Za-z0-9_]+$/.test(k) ? k : `'${yamlEscape(k)}'`;
+        if (v && typeof v === 'object') {
+          // Non-empty object or array
+          if (Array.isArray(v) && v.length === 0) return `${pad}${key}: []`;
+          if (!Array.isArray(v) && Object.keys(v).length === 0) return `${pad}${key}: {}`;
+          return `${pad}${key}:\n${toSingleQuotedYAML(v, indent + 1)}`;
+        } else {
+          return `${pad}${key}: ${yamlScalar(v)}`;
+        }
+      }).join('\n');
+    }
+    return pad + yamlScalar(value);
+  }
+
+  function generateWorkflowArtifacts(entry) {
+    const spec = JSON.parse(JSON.stringify(entry.spec || {}));
+    const steps = (entry.callHistory || []).map((h) => ({
+      tool: h.toolName,
+      args: h.args || {},
+      keep_session_open: !!h.keepSessionOpen,
+      started_at: h.startedAt || null,
+      finished_at: h.finishedAt || null,
+      ok: !!h.success,
+      warmup: !!h.warmup
+    }));
+    const displayName = entry.serverName || entry.displayName || spec.url || spec.command || 'server';
+    const prettySteps = steps.map((s) => {
+      const argPairs = Object.entries(s.args || {}).map(([k, v]) => {
+        let rendered;
+        if (typeof v === 'string') rendered = `'${v.replace(/'/g, "''")}'`;
+        else if (v === null || v === undefined) rendered = 'null';
+        else if (typeof v === 'boolean') rendered = v ? 'true' : 'false';
+        else if (typeof v === 'number' || typeof v === 'bigint') rendered = String(v);
+        else rendered = `'${String(v).replace(/'/g, "''")}'`;
+        return `${k}=${rendered}`;
+      });
+      return {
+        action: `call ${displayName} tool ${s.tool}${argPairs.length ? ' ' + argPairs.join(' ') : ''}`,
+        ...s
+      };
+    });
+    const workflow = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      server: { name: displayName, spec },
+      steps: prettySteps
+    };
+    const yaml = toSingleQuotedYAML(workflow) + '\n';
+    const baseName = `${sanitizeFilenameSegment(displayName)}_${formatTimestampForFilename(new Date())}_session`;
+
+    let js = `/* Generated by MCP Diagnosis Tool */\n` +
+`const BASE_URL = process.env.MCP_DOCTOR_URL || 'http://localhost:3000';\n` +
+`const spec = ${JSON.stringify(spec, null, 2)};\n` +
+`const steps = ${JSON.stringify(steps, null, 2)};\n` +
+`async function run(){\n` +
+`  for (const s of steps){\n` +
+`    const res = await fetch(\`${'${BASE_URL}'}/api/tools/call\`, {\n` +
+`      method:'POST', headers:{'Content-Type':'application/json'},\n` +
+`      body: JSON.stringify({ spec, toolName: s.tool, toolArgs: s.args || {}, keepSessionOpen: !!s.keep_session_open })\n` +
+`    });\n` +
+`    let data;\n` +
+`    try { data = await res.json(); } catch { data = { ok: false }; }\n` +
+`    console.log('tool', s.tool, 'ok=', data.ok, 'sessionId=', data.sessionId || null);\n` +
+`    if (!res.ok) throw new Error(JSON.stringify(data));\n` +
+`  }\n` +
+`}\n` +
+`run().catch(err=>{ console.error('Run failed:', err); process.exit(1); });\n`;
+
+    let py = `# Generated by MCP Diagnosis Tool\n` +
+`import os, json, requests\n` +
+`BASE_URL = os.getenv('MCP_DOCTOR_URL', 'http://localhost:3000')\n` +
+`spec = ${JSON.stringify(spec, null, 2)}\n` +
+`steps = ${JSON.stringify(steps, null, 2)}\n` +
+`for s in steps:\n` +
+`    r = requests.post(f"{BASE_URL}/api/tools/call", json={\n` +
+`        "spec": spec,\n` +
+`        "toolName": s["tool"],\n` +
+`        "toolArgs": s.get("args", {}),\n` +
+`        "keepSessionOpen": bool(s.get("keep_session_open", False))\n` +
+`    })\n` +
+`    try:\n` +
+`        data = r.json()\n` +
+`    except Exception:\n` +
+`        data = {"ok": False, "error": {"details": r.text}}\n` +
+`    print("tool", s["tool"], "ok=", data.get("ok"))\n` +
+`    if not r.ok:\n` +
+`        raise SystemExit(1)\n`;
+
+
+    // Override exports with direct MCP client code (JS + Python)
+    js = `/* Generated by MCP Diagnosis Tool: direct MCP client replay */\n` +
+  `// Requires: npm i @modelcontextprotocol/sdk\n` +
+  `const { Client } = require('@modelcontextprotocol/sdk/client/index.js');\n` +
+  `const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');\n` +
+  `const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');\n` +
+  `const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');\n` +
+  `\n` +
+  `const spec = ${JSON.stringify(spec, null, 2)};\n` +
+  `const steps = ${JSON.stringify(steps, null, 2)};\n` +
+  `\n` +
+  `let client = null;\n` +
+  `function toJsonable(x){\n` +
+  `  if (x == null) return x;\n` +
+  `  const t = typeof x;\n` +
+  `  if (t === 'string' || t === 'number' || t === 'boolean') return x;\n` +
+  `  if (Array.isArray(x)) return x.map(toJsonable);\n` +
+  `  if (t === 'object') {\n` +
+  `    if (x.type && (x.text !== undefined || x.data !== undefined || x.mimeType !== undefined || x.name !== undefined || x.error !== undefined || x.url !== undefined || x.path !== undefined)) {\n` +
+  `      const out = { type: x.type };\n` +
+  `      for (const k of ['text','data','mimeType','name','error','url','path']) { if (Object.prototype.hasOwnProperty.call(x, k)) out[k] = toJsonable(x[k]); }\n` +
+  `      return out;\n` +
+  `    }\n` +
+  `    const out = {}; for (const [k, v] of Object.entries(x)) out[k] = toJsonable(v); return out;\n` +
+  `  }\n` +
+  `  return String(x);\n` +
+  `}\n` +
+  `async function ensureClient() {\n` +
+  `  if (client) return client;\n` +
+  `  client = new Client({ name: 'mcp-session-replay', version: '1.0.0' });\n` +
+  `  if (spec.mode === 'stdio') {\n` +
+  `    const transport = new StdioClientTransport({\n` +
+  `      command: spec.command,\n` +
+  `      args: spec.args || [],\n` +
+  `      env: spec.env || {},\n` +
+  `      cwd: spec.cwd,\n` +
+  `      stderr: spec.stderr\n` +
+  `    });\n` +
+  `    await client.connect(transport);\n` +
+  `  } else if (spec.mode === 'http') {\n` +
+  `    const url = new URL(spec.url);\n` +
+  `    try {\n` +
+  `      const http = new StreamableHTTPClientTransport(url);\n` +
+  `      await client.connect(http);\n` +
+  `    } catch (_) {\n` +
+  `      const sse = new SSEClientTransport(url);\n` +
+  `      await client.connect(sse);\n` +
+  `    }\n` +
+  `  } else {\n` +
+  `    throw new Error('Unknown spec.mode: ' + spec.mode);\n` +
+  `  }\n` +
+  `  return client;\n` +
+  `}\n` +
+  `\n` +
+  `async function closeClient() {\n` +
+  `  if (client) {\n` +
+  `    try { await client.close(); } catch {}\n` +
+  `    client = null;\n` +
+  `  }\n` +
+  `}\n` +
+  `\n` +
+  `async function run() {\n` +
+  `  try {\n` +
+  `    for (const s of steps) {\n` +
+  `      const c = await ensureClient();\n` +
+  `      const result = await c.callTool({ name: s.tool, arguments: s.args || {} });\n` +
+  `      const payload = (result && (result.content ?? result)) ?? null;\n` +
+  `      console.log('tool', s.tool, '->\\n' + JSON.stringify(toJsonable(payload), null, 2));\n` +
+  `      if (!s.keep_session_open) {\n` +
+  `        await closeClient();\n` +
+  `      }\n` +
+  `    }\n` +
+  `  } finally {\n` +
+  `    await closeClient();\n` +
+  `  }\n` +
+  `}\n` +
+  `\n` +
+  `run().catch(err => { console.error('Run failed:', err); process.exit(1); });\n`;
+
+    py = `# Generated by MCP Diagnosis Tool: direct MCP client replay\n` +
+  `# Requires: pip install mcp\n` +
+  `import asyncio, json\n` +
+  `from contextlib import AsyncExitStack\n` +
+  `from mcp import ClientSession\n` +
+  `from mcp.client.stdio import stdio_client, StdioServerParameters\n` +
+  `from mcp.client.streamable_http import streamablehttp_client\n` +
+  `\n` +
+  `spec = ${JSON.stringify(spec, null, 2)}\n` +
+  `steps = ${JSON.stringify(steps, null, 2)}\n` +
+  `\n` +
+  `session = None\n` +
+  `exit_stack = AsyncExitStack()\n` +
+  `\n` +
+  `def to_jsonable(x):\n` +
+  `    import dataclasses\n` +
+  `    if x is None or isinstance(x, (str, int, float, bool)):\n` +
+  `        return x\n` +
+  `    if isinstance(x, (list, tuple)):\n` +
+  `        return [to_jsonable(i) for i in x]\n` +
+  `    if isinstance(x, dict):\n` +
+  `        return {str(k): to_jsonable(v) for k, v in x.items()}\n` +
+  `    t = getattr(x, 'type', None)\n` +
+  `    if t:\n` +
+  `        out = {'type': t}\n` +
+  `        for attr in ('text','data','mimeType','name','error','url','path'):\n` +
+  `            if hasattr(x, attr):\n` +
+  `                out[attr] = getattr(x, attr)\n` +
+  `        return out\n` +
+  `    if dataclasses.is_dataclass(x):\n` +
+  `        return to_jsonable(dataclasses.asdict(x))\n` +
+  `    d = getattr(x, '__dict__', None)\n` +
+  `    if d is not None:\n` +
+  `        return {k: to_jsonable(v) for k, v in d.items()}\n` +
+  `    return str(x)\n` +
+  `\n` +
+  `async def ensure_session():\n` +
+  `    global session\n` +
+  `    if session is not None:\n` +
+  `        return session\n` +
+  `    await exit_stack.__aenter__()\n` +
+  `    if spec.get('mode') == 'stdio':\n` +
+  `        params = StdioServerParameters(command=spec.get('command'), args=spec.get('args') or [], env=spec.get('env') or None)\n` +
+  `        read, write = await exit_stack.enter_async_context(stdio_client(params))\n` +
+  `        sess = await exit_stack.enter_async_context(ClientSession(read, write))\n` +
+  `    elif spec.get('mode') == 'http':\n` +
+  `        url = spec.get('url')\n` +
+  `        if not url:\n` +
+  `            raise RuntimeError('Missing spec.url for http mode')\n` +
+  `        read, write = await exit_stack.enter_async_context(streamablehttp_client(url))\n` +
+  `        sess = await exit_stack.enter_async_context(ClientSession(read, write))\n` +
+  `    else:\n` +
+  `        raise RuntimeError(f"Unknown mode: {spec.get('mode')}")\n` +
+  `    await sess.initialize()\n` +
+  `    session = sess\n` +
+  `    return session\n` +
+  `\n` +
+  `async def close_session():\n` +
+  `    global session\n` +
+  `    try:\n` +
+  `        await exit_stack.aclose()\n` +
+  `    finally:\n` +
+  `        session = None\n` +
+  `\n` +
+  `async def main():\n` +
+  `    try:\n` +
+  `        for s in steps:\n` +
+  `            sess = await ensure_session()\n` +
+  `            result = await sess.call_tool(s['tool'], s.get('args') or {})\n` +
+  `            payload = getattr(result, 'content', None) or getattr(result, 'result', None)\n` +
+  `            print('tool', s['tool'], '->', json.dumps(to_jsonable(payload), ensure_ascii=False))\n` +
+  `            if not bool(s.get('keep_session_open', False)):\n` +
+  `                await close_session()\n` +
+  `    finally:\n` +
+  `        await close_session()\n` +
+  `\n` +
+  `if __name__ == '__main__':\n` +
+  `    asyncio.run(main())\n`;
+
+    return { yaml, js, py, baseName };
+  }
+
+  async function saveArtifactsViaDialog(artifacts) {
+    const suggested = artifacts.baseName || 'mcp_session';
+    if (window.showDirectoryPicker) {
+      const dirHandle = await window.showDirectoryPicker();
+      const name = window.prompt('Enter base filename for export (no extension)', suggested) || suggested;
+      await writeFile(dirHandle, `${name}.yaml`, artifacts.yaml);
+      await writeFile(dirHandle, `${name}.js`, artifacts.js);
+      await writeFile(dirHandle, `${name}.py`, artifacts.py);
+      alert('Exported session files to chosen folder.');
+      return;
+    }
+    // Fallback to downloads
+    downloadTextFile(`${suggested}.yaml`, artifacts.yaml, 'text/yaml;charset=utf-8');
+    downloadTextFile(`${suggested}.js`, artifacts.js, 'application/javascript;charset=utf-8');
+    downloadTextFile(`${suggested}.py`, artifacts.py, 'text/x-python;charset=utf-8');
+    alert('Exported session files via downloads (directory picker not available).');
+  }
+
+  async function writeFile(dirHandle, filename, content) {
+    const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(content);
+    await writable.close();
+  }
+
+  async function exportSessionForEntry(entry) {
+    if (!entry.callHistory || entry.callHistory.length === 0) {
+      alert('No tool calls recorded for this server session yet.');
+      return;
+    }
+    const artifacts = generateWorkflowArtifacts(entry);
+    await saveArtifactsViaDialog(artifacts);
+  }
+
 
   function applyLastArgs(context) {
     const lastArgs = context.lastArgs ?? {};
@@ -1195,6 +1545,8 @@
       }
       return;
     }
+    const startedAtDate = new Date();
+    const startedAtIso = toISOStringWithTZ(startedAtDate);
     try {
       const response = await fetch('/api/tools/call', {
         method: 'POST',
@@ -1202,18 +1554,20 @@
         body: JSON.stringify({ spec: entry.spec, toolName, toolArgs: {}, keepSessionOpen: true })
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data.ok === false) {
-        throw new Error(data?.error?.details || 'Failed to warm up session');
-      }
-      if (data.sessionId) {
+      const finishedAtIso = toISOStringWithTZ(new Date());
+      const ok = response.ok && data.ok !== false;
+      if (ok && data.sessionId) {
         entry.activeSessionId = data.sessionId;
         entry.sessionReused = !!data.sessionReused;
         entry.sessionCreatedAt = data.sessionCreatedAt || new Date().toISOString();
       }
-      // Clear hidden markers
+      // Clear hidden markers and update UI
       entry.sessionHidden = false;
-      entry.hiddenSessionId = null;
-      entry.hiddenSessionCreatedAt = null;
+      if (ok) {
+        entry.hiddenSessionId = null;
+        entry.hiddenSessionCreatedAt = null;
+      }
+      appendCallHistory(entry, { toolName, args: {}, keepSessionOpen: true, startedAt: startedAtIso, finishedAt: finishedAtIso, success: ok, warmup: true });
       renderServers();
       if (activeToolContext && activeToolContext.entry === entry) {
         updateModalSessionInfo(entry);
@@ -1222,6 +1576,7 @@
       console.error('Warm-up session failed:', err);
       // Still unhide UI, but no active session
       entry.sessionHidden = false;
+      appendCallHistory(entry, { toolName, args: {}, keepSessionOpen: true, startedAt: startedAtIso, finishedAt: toISOStringWithTZ(new Date()), success: false, warmup: true });
       renderServers();
       if (activeToolContext && activeToolContext.entry === entry) {
         updateModalSessionInfo(entry);
@@ -1463,6 +1818,8 @@
         entry.toolTests[tool.name].durationMs = durationMs;
         activeToolContext.reportData = reportData;
         toolModalReport.disabled = false;
+        appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: true });
+
         // Re-render to update session status
         renderServers();
         // Update modal session info
@@ -1494,6 +1851,8 @@
         entry.toolTests[tool.name].startedAt = startedAtIso;
         entry.toolTests[tool.name].finishedAt = finishedAtIso;
         entry.toolTests[tool.name].durationMs = durationMs;
+        appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: false });
+
         activeToolContext.reportData = reportData;
         toolModalReport.disabled = false;
       }
@@ -1527,6 +1886,8 @@
       entry.toolTests[tool.name].reportData = reportData;
       entry.toolTests[tool.name].totalResult = resultPayload;
       entry.toolTests[tool.name].startedAt = startedAtIso;
+      appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: false });
+
       entry.toolTests[tool.name].finishedAt = finishedAtIso;
       entry.toolTests[tool.name].durationMs = durationMs;
       activeToolContext.reportData = reportData;
@@ -1794,7 +2155,8 @@
       result: null,
       error: null,
       handshake: null,
-      toolTests: {}
+      toolTests: {},
+      callHistory: []
     };
     servers.push(entry);
     renderServers();
