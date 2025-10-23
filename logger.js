@@ -110,6 +110,28 @@ function log(event, payload) {
   try { inMemory.push(record); if (inMemory.length > MAX_INMEMORY) inMemory.shift(); } catch (_) {}
 }
 
+// Enhanced logging function that truncates large payloads for readability
+function logWithTruncation(event, payload, maxOutputLength = 500) {
+  const record = { ts: new Date().toISOString(), event, ...payload };
+
+  // Truncate large output fields for console display
+  const consoleRecord = { ...record };
+  if (consoleRecord.output && typeof consoleRecord.output === 'object') {
+    const outputStr = JSON.stringify(consoleRecord.output);
+    if (outputStr.length > maxOutputLength) {
+      consoleRecord.output = `[TRUNCATED ${outputStr.length} chars] ${outputStr.substring(0, maxOutputLength)}...`;
+      consoleRecord.outputTruncated = true;
+      consoleRecord.outputFullLength = outputStr.length;
+    }
+  }
+
+  // Write full record to file
+  writeLine(JSON.stringify(record));
+  // Write truncated record to console
+  try { console.log(`[DEBUG_JSON] ${JSON.stringify(consoleRecord)}`); } catch (_) {}
+  try { inMemory.push(record); if (inMemory.length > MAX_INMEMORY) inMemory.shift(); } catch (_) {}
+}
+
 function logError(event, error, extra) {
   const record = {
     ts: new Date().toISOString(), event, level: 'error',
@@ -126,7 +148,7 @@ function getRecent(limit = 200) {
 }
 
 module.exports = {
-  log, logError, LOG_PATH, getRecent,
+  log, logError, logWithTruncation, LOG_PATH, getRecent,
   attachConsoleInterceptors, detachConsoleFile, rotateConsoleFile,
   startRolling24Hours, getNextRotationTs
 };

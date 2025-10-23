@@ -11,7 +11,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { log, logError, LOG_PATH, getRecent, attachConsoleInterceptors, detachConsoleFile, rotateConsoleFile, startRolling24Hours, getNextRotationTs } = require('./logger');
+const { log, logError, logWithTruncation, LOG_PATH, getRecent, attachConsoleInterceptors, detachConsoleFile, rotateConsoleFile, startRolling24Hours, getNextRotationTs } = require('./logger');
 const fs = require('fs');
 
 // Debug signature to verify correct file is running and to force-create debug log file
@@ -379,14 +379,20 @@ app.post('/api/tools/call', async (req, res) => {
     const debugMsg2 = `[DEBUG] callTool result - ok: ${result.ok}, sessionId: ${result.sessionId}, sessionReused: ${result.sessionReused}`;
     try { process.stdout.write(debugMsg2 + "\n"); } catch(_) {}
     try { process.stderr.write(debugMsg2 + "\n"); } catch(_) {}
-    log('tools_call_response', {
+
+    // Enhanced logging with tool output (truncated for console, full in file)
+    logWithTruncation('tools_call_response', {
       ok: result?.ok,
+      toolName,
       sessionId: result?.sessionId || null,
       sessionReused: !!result?.sessionReused,
       transport: result?.transport || null,
       error: result?.error?.kind || null,
+      output: result?.output,  // Include the actual tool output
+      handshake: result?.handshake,
       endedAt: new Date().toISOString()
-    });
+    }, 1000);  // Truncate console output at 1000 chars
+
     res.json(result);
   } catch (err) {
     try { process.stderr.write(`[DEBUG] callTool error: ${err?.message}\n`); } catch(_) {}

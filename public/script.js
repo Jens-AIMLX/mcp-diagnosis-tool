@@ -62,8 +62,11 @@
   const workflowIdEl = document.getElementById('workflow-id');
   const workflowCreatedEl = document.getElementById('workflow-created');
   const workflowCallsEl = document.getElementById('workflow-calls');
+  const workflowActiveSessionsEl = document.getElementById('workflow-active-sessions');
+  const workflowKeepSessionsOpenCheckbox = document.getElementById('workflow-keep-sessions-open');
   const btnExportWorkflow = document.getElementById('btn-export-workflow');
   const btnResetWorkflow = document.getElementById('btn-reset-workflow');
+  const btnCloseAllSessions = document.getElementById('btn-close-all-sessions');
   let workflowSession = null;
 
   // --- Log viewer foldout elements ---
@@ -352,10 +355,65 @@
 	    });
 	  }
 	  if (btnResetWorkflow) {
-	    btnResetWorkflow.addEventListener('click', () => {
+	    btnResetWorkflow.addEventListener('click', async () => {
+	      // Close all active sessions before resetting
+	      const activeSessions = servers.filter(s => s.activeSessionId);
+	      if (activeSessions.length > 0) {
+	        const confirmed = confirm(`This will close ${activeSessions.length} active session(s). Continue?`);
+	        if (!confirmed) return;
+
+	        for (const entry of activeSessions) {
+	          if (entry.activeSessionId) {
+	            await closeSessionForEntry(entry);
+	          }
+	        }
+	      }
+
 	      workflowSession = null;
-      updateWorkflowPanel();
+	      if (workflowKeepSessionsOpenCheckbox) workflowKeepSessionsOpenCheckbox.checked = false;
+	      updateWorkflowPanel();
+	      renderServers();
 	      alert('Workflow reset.');
+	    });
+	  }
+	  if (btnCloseAllSessions) {
+	    btnCloseAllSessions.addEventListener('click', async () => {
+	      const activeSessions = servers.filter(s => s.activeSessionId);
+	      if (activeSessions.length === 0) {
+	        alert('No active sessions to close.');
+	        return;
+	      }
+
+	      const confirmed = confirm(`Close ${activeSessions.length} active session(s)?`);
+	      if (!confirmed) return;
+
+	      for (const entry of activeSessions) {
+	        if (entry.activeSessionId) {
+	          await closeSessionForEntry(entry);
+	        }
+	      }
+
+	      if (workflowKeepSessionsOpenCheckbox) workflowKeepSessionsOpenCheckbox.checked = false;
+	      updateWorkflowPanel();
+	      renderServers();
+	      alert('All sessions closed.');
+	    });
+	  }
+	  if (workflowKeepSessionsOpenCheckbox) {
+	    workflowKeepSessionsOpenCheckbox.addEventListener('change', async () => {
+	      if (!workflowKeepSessionsOpenCheckbox.checked) {
+	        // Unchecked - close all active sessions
+	        const activeSessions = servers.filter(s => s.activeSessionId);
+	        if (activeSessions.length > 0) {
+	          for (const entry of activeSessions) {
+	            if (entry.activeSessionId) {
+	              await closeSessionForEntry(entry);
+	            }
+	          }
+	          updateWorkflowPanel();
+	          renderServers();
+	        }
+	      }
 	    });
 	  }
 	  updateWorkflowPanel();
@@ -509,11 +567,16 @@
 	      workflowIdEl.textContent = '—';
 	      workflowCreatedEl.textContent = '—';
 	      workflowCallsEl.textContent = '0';
+	      if (workflowActiveSessionsEl) workflowActiveSessionsEl.textContent = '0';
 	      return;
 	    }
 	    workflowIdEl.textContent = workflowSession.id;
 	    workflowCreatedEl.textContent = new Date(workflowSession.createdAt).toLocaleString();
 	    workflowCallsEl.textContent = String(workflowSession.calls.length || 0);
+
+	    // Count active sessions across all servers
+	    const activeSessions = servers.filter(s => s.activeSessionId).length;
+	    if (workflowActiveSessionsEl) workflowActiveSessionsEl.textContent = String(activeSessions);
 	  } catch (_) {}
 	}
 	function generateCombinedWorkflowReport(allServers, wf) {
@@ -902,18 +965,15 @@
     const hideButtonDisabled = (!hasSession || entry.sessionHidden) ? ' disabled' : '';
 
     let html = '<div class="detail-block session-controls-block">';
-    html += '<div class="session-controls-row">';
-    html += '<label class="session-checkbox-label">';
-    html += `<input type="checkbox" class="session-keep-open-checkbox" data-server-id="${escapeAttribute(serverId)}" ${hasSession ? 'checked' : ''}/>`;
-    const hiddenBadge = entry.sessionHidden ? ' <span class="session-hidden-badge">(hidden)</span>' : '';
-    html += `<span>Keep session open (for multi-step workflows)${hiddenBadge}</span>`;
-    html += '</label>';
-    html += `<button type="button" class="session-hide-button secondary" data-server-id="${escapeAttribute(serverId)}"${hideButtonDisabled}>Hide session</button>`;
-    html += `<button type="button" class="session-close-button secondary" data-server-id="${escapeAttribute(serverId)}"${closeButtonDisabled}>Close session</button>`;
-    html += `<button type="button" class="session-export-button" data-server-id="${escapeAttribute(serverId)}">Export session as…</button>`;
-    html += '</div>';
 
+    // Session status and controls (checkbox moved to app-level workflow section)
     if (hasSession || entry.sessionHidden) {
+      html += '<div class="session-controls-row">';
+      html += `<strong>Session Status</strong>`;
+      const hiddenBadge = entry.sessionHidden ? ' <span class="session-hidden-badge">(hidden)</span>' : '';
+      html += hiddenBadge;
+      html += '</div>';
+
       const displayId = hasSession ? sessionId : escapeHtml(entry.hiddenSessionId || '-')
       const createdRaw = hasSession ? entry.sessionCreatedAt : entry.hiddenSessionCreatedAt;
       const createdText = createdRaw ? new Date(createdRaw).toLocaleString() : 'Unknown';
@@ -925,6 +985,16 @@
            + `<span class="session-info-created">${escapeHtml(createdText)}</span></div>`;
       html += '<div class="session-info-item"><span class="session-info-key">State:</span> '
            + `<span class="session-info-state">${stateText}</span></div>`;
+      html += '</div>';
+
+      html += '<div class="session-controls-row">';
+      html += `<button type="button" class="session-hide-button secondary" data-server-id="${escapeAttribute(serverId)}"${hideButtonDisabled}>Hide session</button>`;
+      html += `<button type="button" class="session-close-button secondary" data-server-id="${escapeAttribute(serverId)}"${closeButtonDisabled}>Close session</button>`;
+      html += `<button type="button" class="session-export-button" data-server-id="${escapeAttribute(serverId)}">Export this server's calls</button>`;
+      html += '</div>';
+    } else {
+      html += '<div class="session-controls-row">';
+      html += '<em>No active session for this server. Use the "Keep sessions open" checkbox in the Workflow section above to enable multi-step workflows.</em>';
       html += '</div>';
     }
 
@@ -1132,29 +1202,7 @@
     });
   }
 
-  // Handle session checkbox changes
-  serversList.addEventListener('change', (event) => {
-    const checkbox = event.target;
-    if (checkbox.classList && checkbox.classList.contains('session-keep-open-checkbox')) {
-      const serverId = checkbox.dataset.serverId;
-      const entry = servers.find((item) => sanitizeKey(item.id || item.serverName || 'unknown') === serverId);
-      if (entry) {
-        if (!checkbox.checked && entry.activeSessionId) {
-          // Checkbox unchecked - close the session
-          void handleCloseServerSession(entry);
-        }
-        if (checkbox.checked && entry.sessionHidden) {
-          // Unhide and immediately warm up session so it is open before next tool
-          entry.sessionHidden = false;
-          renderServers();
-          if (activeToolContext && activeToolContext.entry === entry) {
-            updateModalSessionInfo(entry);
-          }
-          void warmUpSession(entry);
-        }
-      }
-    }
-  });
+  // Note: Session checkbox is now at app-level (workflow section), not per-server
 
   serversList.addEventListener('click', async (event) => {
     const button = event.target.closest('button');
@@ -2200,10 +2248,8 @@
     }
 
     const { entry, tool } = activeToolContext;
-    // Get keepSessionOpen state from the server's checkbox
-    const serverId = sanitizeKey(entry.id || entry.serverName || 'unknown');
-    const serverCheckbox = document.querySelector(`.session-keep-open-checkbox[data-server-id="${serverId}"]`);
-    const keepSessionOpen = serverCheckbox ? serverCheckbox.checked : false;
+    // Get keepSessionOpen state from the app-level workflow checkbox
+    const keepSessionOpen = workflowKeepSessionsOpenCheckbox ? workflowKeepSessionsOpenCheckbox.checked : false;
     const startedAtDate = new Date();
     const startedAtIso = toISOStringWithTZ(startedAtDate);
     toolModalSubmit.disabled = true;

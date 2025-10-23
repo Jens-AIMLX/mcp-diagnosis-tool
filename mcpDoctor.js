@@ -716,6 +716,7 @@ async function callTool(spec, toolName, toolArgs = {}, options = {}) {
       sessionReused: response.sessionReused,
       transport: response.transport,
       spec: { mode: spec.mode, command: spec.command, url: spec.url, args: spec.args },
+      output: result,  // Include the actual tool output
       endedAt
     });
     log('tool_call_end', {

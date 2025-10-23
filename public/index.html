@@ -50,10 +50,18 @@
                 <span class="server-control-item">Workflow ID: <code id="workflow-id">—</code></span>
                 <span class="server-control-item">Created: <code id="workflow-created">—</code></span>
                 <span class="server-control-item">Calls: <code id="workflow-calls">0</code></span>
+                <span class="server-control-item">Active Sessions: <code id="workflow-active-sessions">0</code></span>
+              </div>
+              <div class="server-control-row">
+                <label class="checkbox-inline">
+                  <input type="checkbox" id="workflow-keep-sessions-open"/>
+                  <span>Keep sessions open (for multi-step workflows across servers)</span>
+                </label>
               </div>
               <div class="server-control-actions">
                 <button type="button" id="btn-export-workflow">Export workflow</button>
-                <button type="button" id="btn-reset-workflow" class="secondary">Reset</button>
+                <button type="button" id="btn-reset-workflow" class="secondary">Reset workflow</button>
+                <button type="button" id="btn-close-all-sessions" class="secondary">Close all sessions</button>
               </div>
             </div>
 
