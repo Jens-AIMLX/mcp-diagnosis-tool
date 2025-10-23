@@ -787,6 +787,42 @@ section h2 {
 }
 .dock-toggle:hover { background-color: #2d3748; }
 .dock-toggle.open { transform: rotate(180deg); }
+.dock-toggle-left { right: 44px; }
+
+/* Log viewer */
+.log-viewer {
+  margin-top: 8px;
+  background-color: #0f1319;
+  border: 1px solid #2d3748;
+  border-radius: 4px;
+  padding: 10px;
+  font-family: "Fira Code", "Source Code Pro", monospace;
+  font-size: 0.8rem;
+  color: #e2e8f0;
+  line-height: 1.35;
+  max-height: 360px;
+  min-height: 160px;
+  overflow: auto;
+  white-space: pre;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Log viewer options */
+.log-toolbar { display:flex; align-items:center; gap:12px; margin-top:4px; color:#cbd5e0; font-size:0.85rem; }
+.log-viewer.wrap { white-space: pre-wrap; word-break: break-word; }
+
+/* Status dot on dock toggles */
+.dock-toggle{ position:absolute; }
+.dock-toggle[data-status]::after{
+  content:''; position:absolute; width:6px; height:6px; border-radius:50%;
+  right:-3px; top:-3px; background-color:#718096; /* default/unknown */
+}
+.dock-toggle[data-status="ok"]::after{ background-color:#38a169; }
+.dock-toggle[data-status="offline"]::after{ background-color:#e53e3e; }
+.dock-toggle[data-status="unknown"]::after{ background-color:#718096; }
+
+
 
 .dock-panel {
   background-color: #1a202c;

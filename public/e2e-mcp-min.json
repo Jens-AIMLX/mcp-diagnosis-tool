@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "quick-check": {
+      "command": "node",
+      "args": ["-v"]
+    }
+  }
+}
+

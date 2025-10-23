@@ -57,6 +57,136 @@
   const btnShutdown = document.getElementById('btn-shutdown-server');
   const btnRestart = document.getElementById('btn-restart-server');
 
+
+  // --- Workflow controls ---
+  const workflowIdEl = document.getElementById('workflow-id');
+  const workflowCreatedEl = document.getElementById('workflow-created');
+  const workflowCallsEl = document.getElementById('workflow-calls');
+  const btnExportWorkflow = document.getElementById('btn-export-workflow');
+  const btnResetWorkflow = document.getElementById('btn-reset-workflow');
+  let workflowSession = null;
+
+  // --- Log viewer foldout elements ---
+  const logviewFoldout = document.getElementById('logview-foldout');
+  const logviewFoldoutToggle = document.getElementById('logview-foldout-toggle');
+  const logViewerPre = document.getElementById('log-viewer-pre');
+  const btnCopyLogview = document.getElementById('btn-copy-logview');
+  const btnRefreshLogview = document.getElementById('btn-refresh-logview');
+  const chkLogFollow = document.getElementById('chk-log-follow');
+  const chkLogWrap = document.getElementById('chk-log-wrap');
+  let logTailTimer = null;
+
+  async function fetchLatestLogText() {
+    try {
+      const res = await fetch('/api/server/log/download', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const text = await res.text();
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
+
+  async function fetchLogTail(bytes = 20000) {
+    try {
+      const res = await fetch(`/api/server/log/tail?bytes=${encodeURIComponent(bytes)}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      if (!data.ok) throw new Error(data?.error?.details || 'tail failed');
+      return { ok: true, text: data.content || '' };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
+
+  function scheduleTailPoll() {
+    if (!chkLogFollow) return;
+    clearTimeout(logTailTimer);
+    if (chkLogFollow.checked && !logviewFoldout.classList.contains('hidden')) {
+      logTailTimer = setTimeout(async () => {
+        await refreshLogViewer();
+        scheduleTailPoll();
+      }, 1500);
+    }
+  }
+
+  async function refreshLogViewer() {
+    if (!logViewerPre) return;
+    logViewerPre.textContent = 'Loading log…';
+    // Prefer tail endpoint; fallback to full download
+    let result = await fetchLogTail(20000);
+    if (!result.ok) {
+      result = await fetchLatestLogText();
+    }
+    if (!result.ok) {
+      logViewerPre.textContent = `Unable to load log (${result.error || 'unknown error'})`;
+      return;
+    }
+    const text = result.text || '';
+    logViewerPre.textContent = text || '(empty)';
+    // Apply wrap preference
+    if (chkLogWrap) {
+      logViewerPre.classList.toggle('wrap', chkLogWrap.checked);
+    }
+    // Auto-scroll to bottom
+    requestAnimationFrame(() => { logViewerPre.scrollTop = logViewerPre.scrollHeight; });
+  }
+
+  // Log viewer foldout toggle
+  if (logviewFoldoutToggle && logviewFoldout) {
+    logviewFoldoutToggle.addEventListener('click', () => {
+      // Ensure the Server panel is visible before showing logs
+      if (serverFoldout && serverFoldout.classList.contains('hidden')) {
+        serverFoldout.classList.remove('hidden');
+        if (serverFoldoutToggle) {
+          serverFoldoutToggle.classList.add('open');
+          serverFoldoutToggle.setAttribute('aria-expanded', 'true');
+        }
+        void refreshServerControl();
+      }
+
+      const nowHidden = logviewFoldout.classList.toggle('hidden');
+      const isOpen = !nowHidden;
+      logviewFoldoutToggle.classList.toggle('open', isOpen);
+      logviewFoldoutToggle.setAttribute('aria-expanded', String(isOpen));
+      if (isOpen) {
+        void refreshLogViewer();
+        scheduleTailPoll();
+      } else {
+        clearTimeout(logTailTimer);
+      }
+    });
+  }
+
+
+  // Log viewer options: wrap and follow
+  if (chkLogWrap && logViewerPre) {
+    chkLogWrap.addEventListener('change', () => {
+      logViewerPre.classList.toggle('wrap', chkLogWrap.checked);
+    });
+  }
+  if (chkLogFollow) {
+    chkLogFollow.addEventListener('change', () => {
+      if (chkLogFollow.checked) scheduleTailPoll(); else clearTimeout(logTailTimer);
+    });
+  }
+
+  if (btnRefreshLogview) {
+    btnRefreshLogview.addEventListener('click', () => void refreshLogViewer());
+  }
+  if (btnCopyLogview) {
+    btnCopyLogview.addEventListener('click', async () => {
+      try {
+        const text = logViewerPre?.textContent || '';
+        await navigator.clipboard.writeText(text);
+        btnCopyLogview.textContent = 'Copied';
+        setTimeout(() => { btnCopyLogview.textContent = 'Copy'; }, 900);
+      } catch (_) {
+        alert('Copy failed');
+      }
+    });
+  }
+
   async function fetchServerInfo() {
     try {
       const res = await fetch('/api/server/info', { cache: 'no-store' });
@@ -80,6 +210,8 @@
       btnReleaseLog.disabled = true;
       btnShutdown.disabled = true;
       btnRestart.disabled = true;
+      if (serverFoldoutToggle) serverFoldoutToggle.setAttribute('data-status', 'offline');
+
       return;
     }
     serverOfflineNote.classList.add('hidden');
@@ -94,6 +226,8 @@
     serverLogStateEl.textContent = detached ? 'log detached' : (redirected ? 'logging attached' : 'stdout tty');
     serverLogStateEl.className = 'badge' + (detached ? ' ok' : '');
     btnReleaseLog.disabled = detached; // only once per run
+    if (serverFoldoutToggle) serverFoldoutToggle.setAttribute('data-status', 'ok');
+
     btnShutdown.disabled = false;
     btnRestart.disabled = false;
   }
@@ -173,6 +307,59 @@
       }
     });
   }
+
+  // Safe stub to avoid early ReferenceError; real definition appears later
+  function updateWorkflowPanel() {}
+  // Normalize MCP tool output for display/export: parse text content JSON if present
+  function normalizeToolOutput(output) {
+    try {
+      if (output == null) return output;
+      const content = output && Array.isArray(output.content) ? output.content : null;
+      if (content) {
+        const texts = content
+          .filter(it => it && it.type === 'text' && typeof it.text === 'string')
+          .map(it => it.text);
+        if (texts.length) {
+          const combined = texts.join('\n');
+          try {
+            return JSON.parse(combined);
+          } catch (_) {
+            return { text: combined };
+          }
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(output, 'result')) {
+        return output.result;
+      }
+      return output;
+    } catch (_) {
+      return output;
+    }
+  }
+
+
+	  // Workflow controls wiring
+	  if (btnExportWorkflow) {
+	    btnExportWorkflow.addEventListener('click', () => {
+	      const wf = workflowSession || getOrStartWorkflow();
+	      if (!wf.calls || wf.calls.length === 0) {
+	        alert('No workflow calls recorded yet.');
+	        return;
+	      }
+	      const report = generateCombinedWorkflowReport(servers, wf);
+	      const base = `MCP_Workflow_${formatTimestampForFilename(new Date())}`;
+	      downloadTextFile(`${base}.md`, report, 'text/markdown;charset=utf-8');
+	    });
+	  }
+	  if (btnResetWorkflow) {
+	    btnResetWorkflow.addEventListener('click', () => {
+	      workflowSession = null;
+      updateWorkflowPanel();
+	      alert('Workflow reset.');
+	    });
+	  }
+	  updateWorkflowPanel();
+
 
 
   // Initial paint + periodic update
@@ -266,15 +453,113 @@
         text = value;
       }
     } else {
-      try {
-        text = JSON.stringify(value, null, 2);
-      } catch (_err) {
-        language = '';
-        text = String(value);
+        // Object or other: pretty-print as JSON
+        try { text = JSON.stringify(value, null, 2); } catch (_) { text = String(value); }
       }
+      return '```' + language + '\n' + text + '\n```';
     }
-    return `\`\`\`${language}\n${text}\n\`\`\``;
-  }
+
+
+	// Normalize MCP tool output for display/export: parse text content JSON if present
+	function normalizeToolOutput(output) {
+	  try {
+	    if (output == null) return output;
+	    // Some clients return { content: [{ type: 'text', text: '...json...' }]}.
+	    const content = output && Array.isArray(output.content) ? output.content : null;
+	    if (content) {
+	      const texts = content.filter(it => it && it.type === 'text' && typeof it.text === 'string').map(it => it.text);
+	      if (texts.length) {
+	        const combined = texts.join('\n');
+	        try {
+	          return JSON.parse(combined);
+	        } catch (_) {
+	          return { text: combined };
+	        }
+	      }
+	    }
+	    // Occasionally servers put data on result instead of content
+	    if (Object.prototype.hasOwnProperty.call(output, 'result')) {
+	      return output.result;
+	    }
+	    return output;
+	  } catch (_) {
+	    return output;
+	  }
+	}
+
+	// Workflow session aggregation (cross-server)
+	function getOrStartWorkflow() {
+	  if (!workflowSession) {
+	    workflowSession = {
+	      id: `wf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+	      createdAt: new Date().toISOString(),
+	      calls: []
+	    };
+	  }
+	  return workflowSession;
+	}
+	function resetWorkflow() {
+	  workflowSession = null;
+	  updateWorkflowPanel();
+	}
+	function updateWorkflowPanel() {
+	  try {
+	    if (!workflowIdEl || !workflowCreatedEl || !workflowCallsEl) return;
+	    if (!workflowSession) {
+	      workflowIdEl.textContent = '—';
+	      workflowCreatedEl.textContent = '—';
+	      workflowCallsEl.textContent = '0';
+	      return;
+	    }
+	    workflowIdEl.textContent = workflowSession.id;
+	    workflowCreatedEl.textContent = new Date(workflowSession.createdAt).toLocaleString();
+	    workflowCallsEl.textContent = String(workflowSession.calls.length || 0);
+	  } catch (_) {}
+	}
+	function generateCombinedWorkflowReport(allServers, wf) {
+	  const lines = [];
+	  const created = wf?.createdAt ? new Date(wf.createdAt).toLocaleString() : 'unknown';
+	  const count = wf?.calls?.length || 0;
+	  lines.push('# MCP Combined Workflow Report');
+	  lines.push('');
+	  lines.push(`- Workflow ID: ${wf?.id || 'n/a'}`);
+	  lines.push(`- Created: ${created}`);
+	  lines.push(`- Total Calls: ${count}`);
+	  const serverNames = new Set();
+	  (wf?.calls || []).forEach(c => serverNames.add(c.serverName || 'unknown'));
+	  lines.push(`- Servers involved: ${Array.from(serverNames).join(', ') || '—'}`);
+	  lines.push('');
+	  if (!count) {
+	    lines.push('_No calls recorded._');
+	    return lines.join('\n');
+	  }
+	  const calls = [...wf.calls].sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
+	  lines.push('## Timeline');
+	  lines.push('');
+	  for (const c of calls) {
+	    const start = c.startedAt || 'n/a';
+	    const end = c.finishedAt || 'n/a';
+	    let dur = 'n/a';
+	    try {
+	      if (c.startedAt && c.finishedAt) {
+	        const d = new Date(c.finishedAt).getTime() - new Date(c.startedAt).getTime();
+	        dur = formatDuration(d);
+	      }
+	    } catch (_) {}
+	    const ok = c.success ? 'OK' : 'FAIL';
+	    const warm = c.warmup ? ' (warm-up)' : '';
+	    lines.push(`- [${ok}] ${start} → ${end} • ${c.serverName || 'server'} • ${c.toolName}${warm}`);
+	    const argsSafe = c.args && Object.keys(c.args).length ? JSON.stringify(c.args, null, 2) : '{}';
+	    lines.push('  \nArgs:');
+	    lines.push('');
+	    lines.push('```json');
+	    lines.push(argsSafe);
+	    lines.push('```');
+	    lines.push('');
+	  }
+	  return lines.join('\n');
+	}
+
 
   function updateSaveButtons() {
     const disabled = !currentConfig || isLoadingConfig;
@@ -1097,7 +1382,7 @@
       setLoadingConfig(false);
     }
   }
-  // Record a tool call into session history
+  // Record a tool call into session history (per-server) and into the global workflow
   function appendCallHistory(entry, rec) {
     try {
       if (!entry.callHistory) entry.callHistory = [];
@@ -1111,6 +1396,20 @@
         warmup: !!rec.warmup
       };
       entry.callHistory.push(copy);
+      // Also append to global workflow aggregator
+      const wf = getOrStartWorkflow();
+      wf.calls.push({
+        serverName: entry.serverName || entry.displayName || 'unknown',
+        serverId: entry.id,
+        toolName: copy.toolName,
+        args: copy.args,
+        keepSessionOpen: copy.keepSessionOpen,
+        startedAt: copy.startedAt,
+        finishedAt: copy.finishedAt,
+        success: copy.success,
+        warmup: copy.warmup
+      });
+      updateWorkflowPanel();
     } catch (_) {
       // best-effort; ignore serialization errors
     }
@@ -1535,15 +1834,33 @@
 
     container.classList.remove('hidden');
     if (payload.ok) {
-      container.innerHTML =
-        '<div class="result-status">Tool executed successfully.</div>' +
-        `<pre>${escapeHtml(stringifyValue(payload.output ?? {}))}</pre>`;
+      let statusHtml = '<div class="result-status">Tool executed successfully.</div>';
+      try {
+        if (payload.output && typeof payload.output === 'object' && payload.output.success === false) {
+          statusHtml = '<div class="result-status error">Tool reported failure (success: false).</div>';
+        }
+      } catch (_) {}
+      container.innerHTML = statusHtml + `<pre>${escapeHtml(stringifyValue(payload.output ?? {}))}</pre>`;
     } else {
       const error = payload.error ?? {};
       const lines = [];
       if (error.kind) lines.push(`kind: ${error.kind}`);
       if (error.advice) lines.push(`advice: ${error.advice}`);
-      if (error.details !== undefined) lines.push(`details: ${stringifyValue(error.details)}`);
+      if (error.details !== undefined) {
+        try {
+          const d = error.details;
+          if (d && typeof d === 'object') {
+            if (d.message) lines.push(`message: ${String(d.message)}`);
+            if (d.code !== undefined) lines.push(`code: ${String(d.code)}`);
+            if (d.status !== undefined) lines.push(`status: ${String(d.status)}`);
+            if (d.stack) {
+              const first = String(d.stack).split('\n')[0];
+              lines.push(`stack: ${first}`);
+            }
+          }
+        } catch (_) {}
+        lines.push(`details: ${stringifyValue(error.details)}`);
+      }
       if (!lines.length) {
         lines.push('Execution failed.');
       }
@@ -1915,7 +2232,8 @@
         entry.toolTests = {};
       }
       if (data.ok) {
-        entry.toolTests[tool.name] = { status: 'ok', output: data.output, lastArgs: args };
+        const normalizedOut = normalizeToolOutput(data.output);
+        entry.toolTests[tool.name] = { status: 'ok', output: normalizedOut, rawOutput: data.output, lastArgs: args };
         activeToolContext.lastArgs = args;
 
         // Handle session info
@@ -1929,7 +2247,7 @@
           entry.sessionCreatedAt = null;
         }
 
-        const resultPayload = { ok: true, output: data.output };
+        const resultPayload = { ok: true, output: normalizedOut };
         setModalResult(resultPayload);
         const reportData = {
           serverName: entry.serverName || entry.displayName || 'unknown',
@@ -1940,7 +2258,7 @@
           finishedAt: finishedAtIso,
           durationMs,
           success: true,
-          response: data.output,
+          response: normalizedOut,
           error: null,
           handshake: handshakeInfo,
           sessionId: data.sessionId,
@@ -2205,11 +2523,15 @@
 
   loadJsonButton.addEventListener('click', () => {
     if (isLoadingConfig) return;
+    try { configJsonInput.value = ''; } catch (_) {}
+    console.info('[ui] Opening file picker for mcp.json');
     configJsonInput.click();
   });
 
   loadTomlButton.addEventListener('click', () => {
     if (isLoadingConfig) return;
+    try { configTomlInput.value = ''; } catch (_) {}
+    console.info('[ui] Opening file picker for mcp.toml');
     configTomlInput.click();
   });
 
@@ -2226,14 +2548,20 @@
   configJsonInput.addEventListener('change', () => {
     const [file] = configJsonInput.files;
     if (file) {
+      console.info('[ui] mcp.json selected:', file.name);
       void handleConfigFile(file, 'json');
+    } else {
+      console.warn('[ui] No file selected for mcp.json');
     }
   });
 
   configTomlInput.addEventListener('change', () => {
     const [file] = configTomlInput.files;
     if (file) {
+      console.info('[ui] mcp.toml selected:', file.name);
       void handleConfigFile(file, 'toml');
+    } else {
+      console.warn('[ui] No file selected for mcp.toml');
     }
   });
 

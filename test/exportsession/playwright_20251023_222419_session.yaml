@@ -1,0 +1,23 @@
+version: 1
+exported_at: '2025-10-23T20:24:19.460Z'
+server:
+  name: 'playwright'
+  spec:
+    mode: 'stdio'
+    command: 'npx'
+    args:
+      - '-y'
+      - '@playwright/mcp@latest'
+      - '--config'
+      - 'C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/plwghtconfig.json'
+steps:
+  -
+    action: 'call playwright tool browser_navigate url=''http://localhost:3002/'''
+    tool: 'browser_navigate'
+    args:
+      url: 'http://localhost:3002/'
+    keep_session_open: false
+    started_at: '2025-10-23T20:23:30.496Z'
+    finished_at: '2025-10-23T20:23:33.201Z'
+    ok: true
+    warmup: false

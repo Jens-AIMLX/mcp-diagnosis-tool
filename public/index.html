@@ -39,10 +39,37 @@
               <button type="button" id="btn-rotate-log" class="secondary">Rotate logfile</button>
               <a id="btn-download-log" class="secondary" href="/api/server/log/download">Download log</a>
               <button type="button" id="btn-restart-server" class="secondary">Restart</button>
+              <button type="button" id="logview-foldout-toggle" class="secondary" aria-expanded="false" aria-controls="logview-foldout" title="Logfile Viewer">Logs</button>
+
               <button type="button" id="btn-shutdown-server" class="danger">Shutdown</button>
             </div>
             <div id="server-offline-note" class="server-offline hidden">Backend offline — UI is now frontend-only.</div>
           </div>
+            <div id="workflow-control" class="detail-block">
+              <div class="server-control-row">
+                <span class="server-control-item">Workflow ID: <code id="workflow-id">—</code></span>
+                <span class="server-control-item">Created: <code id="workflow-created">—</code></span>
+                <span class="server-control-item">Calls: <code id="workflow-calls">0</code></span>
+              </div>
+              <div class="server-control-actions">
+                <button type="button" id="btn-export-workflow">Export workflow</button>
+                <button type="button" id="btn-reset-workflow" class="secondary">Reset</button>
+              </div>
+            </div>
+
+        <div id="logview-foldout" class="dock-panel hidden" role="region" aria-label="Log viewer">
+          <div class="server-control-actions">
+            <button type="button" id="btn-refresh-logview" class="secondary">Refresh</button>
+            <button type="button" id="btn-copy-logview" class="secondary">Copy</button>
+          </div>
+          <div class="log-toolbar">
+            <label class="checkbox-inline"><input type="checkbox" id="chk-log-follow"/> Follow tail</label>
+            <label class="checkbox-inline"><input type="checkbox" id="chk-log-wrap"/> Wrap lines</label>
+          </div>
+
+          <pre id="log-viewer-pre" class="log-viewer"></pre>
+        </div>
+
         </div>
         <input type="file" id="config-json-input" accept=".json,application/json" class="hidden" />
         <input type="file" id="config-toml-input" accept=".toml,text/plain" class="hidden" />

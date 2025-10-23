@@ -5,15 +5,29 @@
       "args": [
         "-y",
         "@playwright/mcp@latest",
-        "--output-dir",
-        "C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots",
+        "--config",
+        "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/mcp-diagnosis-tool/mcp-server/config/plwghtconfig.json",
+        "--browser", "chrome",
+        "--isolated",
+        "--viewport-size", "2400,1350",
+        "--no-sandbox"
+      ],
+      "env": {
+        "PLAYWRIGHT_BROWSERS_PATH": "0"
+      }
+    },
+    "playwright-debug": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--config",
+        "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/mcp-diagnosis-tool/mcp-server/config/plwghtconfig.json",
         "--save-session",
         "--save-trace",
-        "--browser",
-        "chrome",
-        "--viewport-size",
-        "2400,1350",
+        "--browser", "chrome",
         "--isolated",
+        "--viewport-size", "2400,1350",
         "--no-sandbox"
       ],
       "env": {
@@ -23,7 +37,9 @@
     "cognitive-visual-req": {
       "command": "node",
       "args": [
-        "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js"
+        "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js",
+        "--config",
+        "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/mcp-diagnosis-tool/mcp-server/config/cognitive-visual-config.json"
       ],
       "env": {
         "NODE_ENV": "production",

@@ -264,6 +264,51 @@ app.get('/api/server/log/download', (req, res) => {
   }
 });
 
+// Tail the end of the current (or latest) server log without downloading the entire file
+app.get('/api/server/log/tail', (req, res) => {
+  try {
+    const maxBytes = 5_000_000; // hard ceiling for safety
+    const defBytes = 20_000;
+    const bytes = Math.max(100, Math.min(maxBytes, Number(req.query.bytes || defBytes)));
+
+    let filePath = SERVER_LOG_PATH;
+    if (LOG_DETACHED) {
+      const latest = getLatestRotatedLogPath();
+      if (latest) filePath = latest;
+    }
+    if (!fs.existsSync(filePath)) {
+      const latest = getLatestRotatedLogPath();
+      if (latest) filePath = latest;
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ ok: false, error: { kind: 'not_found', details: 'No log file available' } });
+    }
+
+    const stat = fs.statSync(filePath);
+    const size = stat.size;
+    const start = Math.max(0, size - bytes);
+    const length = size - start;
+
+    let content = '';
+    if (length > 0) {
+      const fd = fs.openSync(filePath, 'r');
+      try {
+        const buffer = Buffer.allocUnsafe(length);
+        fs.readSync(fd, buffer, 0, length, start);
+        content = buffer.toString('utf8');
+      } finally {
+        try { fs.closeSync(fd); } catch (_) {}
+      }
+    }
+
+    res.json({ ok: true, file: path.basename(filePath), size, start, bytesRead: length, truncated: start > 0, content });
+  } catch (err) {
+    logError('server_log_tail_error', err);
+    res.status(500).json({ ok: false, error: { kind: 'tail_failed', details: err.message } });
+  }
+});
+
+
 // Graceful shutdown (frontend should show offline state after this)
 app.post('/api/server/shutdown', (req, res) => {
   try { log('server_shutdown_requested', { from: req.ip || 'unknown' }); } catch (_) {}
