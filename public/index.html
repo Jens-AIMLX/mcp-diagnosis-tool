@@ -45,23 +45,46 @@
             </div>
             <div id="server-offline-note" class="server-offline hidden">Backend offline — UI is now frontend-only.</div>
           </div>
-            <div id="workflow-control" class="detail-block">
-              <div class="server-control-row">
-                <span class="server-control-item">Workflow ID: <code id="workflow-id">—</code></span>
-                <span class="server-control-item">Created: <code id="workflow-created">—</code></span>
-                <span class="server-control-item">Calls: <code id="workflow-calls">0</code></span>
-                <span class="server-control-item">Active Sessions: <code id="workflow-active-sessions">0</code></span>
+            <!-- Workflow Session Status (always visible, outside server foldouts) -->
+            <div id="workflow-session-status" class="detail-block session-status-block">
+              <div class="session-status-header">
+                <strong>Workflow Session</strong>
               </div>
-              <div class="server-control-row">
+              <div class="session-status active" id="workflow-session-display">
+                <div class="session-info-item">
+                  <span class="session-info-key">ID:</span>
+                  <span class="session-status-id" id="workflow-id">—</span>
+                </div>
+                <div class="session-info-item">
+                  <span class="session-info-key">Created:</span>
+                  <span class="session-info-created" id="workflow-created">—</span>
+                </div>
+                <div class="session-info-item">
+                  <span class="session-info-key">State:</span>
+                  <span class="session-info-state" id="workflow-state">Open</span>
+                </div>
+                <div class="session-info-item">
+                  <span class="session-info-key">Calls:</span>
+                  <span id="workflow-calls">0</span>
+                </div>
+                <div class="session-info-item">
+                  <span class="session-info-key">Active Sessions:</span>
+                  <span id="workflow-active-sessions">0</span>
+                </div>
+              </div>
+              <div class="session-controls-row">
+                <button type="button" id="btn-hide-workflow" class="secondary" disabled>Hide session</button>
+                <button type="button" id="btn-close-all-sessions" class="secondary">Close all sessions</button>
+                <button type="button" id="btn-export-workflow">Export workflow</button>
+              </div>
+              <div class="session-controls-row">
                 <label class="checkbox-inline">
                   <input type="checkbox" id="workflow-keep-sessions-open"/>
                   <span>Keep sessions open (for multi-step workflows across servers)</span>
                 </label>
               </div>
-              <div class="server-control-actions">
-                <button type="button" id="btn-export-workflow">Export workflow</button>
+              <div class="session-controls-row">
                 <button type="button" id="btn-reset-workflow" class="secondary">Reset workflow</button>
-                <button type="button" id="btn-close-all-sessions" class="secondary">Close all sessions</button>
               </div>
             </div>
 

@@ -1,0 +1,21 @@
+version: 1
+exported_at: '2025-10-23T21:08:24.642Z'
+server:
+  name: 'cognitive-visual-analytics'
+  spec:
+    mode: 'stdio'
+    command: 'node'
+    args:
+      - 'C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js'
+      - '--config'
+      - 'C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/cognitive-visual-config.json'
+steps:
+  -
+    action: 'call cognitive-visual-analytics tool cognitive_visual_dimensions'
+    tool: 'cognitive_visual_dimensions'
+    args: {}
+    keep_session_open: true
+    started_at: '2025-10-23T21:08:05.689Z'
+    finished_at: '2025-10-23T21:08:05.981Z'
+    ok: true
+    warmup: false
