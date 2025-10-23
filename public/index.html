@@ -24,6 +24,25 @@
           <button type="button" id="save-json-btn" class="secondary" disabled>Save as JSON</button>
           <button type="button" id="save-toml-btn" class="secondary" disabled>Save as TOML</button>
           <span id="config-file-name" class="config-file-name">No file selected</span>
+          <button id="server-foldout-toggle" class="dock-toggle" aria-expanded="false" title="Server & logs">▾</button>
+        </div>
+        <div id="server-foldout" class="dock-panel hidden" role="region" aria-label="Server and logs controls">
+          <div id="server-control" class="detail-block">
+            <div class="server-control-row">
+              <span class="server-control-item">Port: <code id="server-port"></code></span>
+              <span class="server-control-item">PID: <code id="server-pid"></code></span>
+              <span class="server-control-item">Next rotation: <code id="server-next-rotation"></code></span>
+              <span class="server-control-item"><span id="server-log-state" class="badge"></span></span>
+            </div>
+            <div class="server-control-actions">
+              <button type="button" id="btn-release-log" class="secondary">Release logfile</button>
+              <button type="button" id="btn-rotate-log" class="secondary">Rotate logfile</button>
+              <a id="btn-download-log" class="secondary" href="/api/server/log/download">Download log</a>
+              <button type="button" id="btn-restart-server" class="secondary">Restart</button>
+              <button type="button" id="btn-shutdown-server" class="danger">Shutdown</button>
+            </div>
+            <div id="server-offline-note" class="server-offline hidden">Backend offline — UI is now frontend-only.</div>
+          </div>
         </div>
         <input type="file" id="config-json-input" accept=".json,application/json" class="hidden" />
         <input type="file" id="config-toml-input" accept=".toml,text/plain" class="hidden" />

@@ -11,17 +11,13 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { log, logError, LOG_PATH, getRecent } = require('./logger');
+const { log, logError, LOG_PATH, getRecent, attachConsoleInterceptors, detachConsoleFile, rotateConsoleFile, startRolling24Hours, getNextRotationTs } = require('./logger');
 const fs = require('fs');
 
 // Debug signature to verify correct file is running and to force-create debug log file
 try {
   console.log('[DEBUG_SIGNATURE] server.js loaded (enhanced logging)');
   fs.appendFileSync(LOG_PATH, '', { encoding: 'utf8' });
-  try {
-    const sig = `[SIGNATURE] server.js boot ${new Date().toISOString()}\n`;
-    fs.appendFileSync(path.join(__dirname, 'server.log'), sig, { encoding: 'utf8' });
-  } catch (_) {}
 } catch (_) {}
 
 const {
@@ -39,16 +35,26 @@ const {
   closeAllSessions
 } = require('./mcpDoctor');
 
+// Server control state for UI and log release attempts
+const SERVER_LOG_PATH = path.join(__dirname, 'server.log');
+let LOG_DETACHED = false;
+
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3060;
 
 // Enable JSON body parsing
 app.use(express.json());
 // Allow cross‑origin requests in case the UI is served from a different host
 app.use(cors());
+// Attach console/stdout/stderr to managed server.log stream (allows rotate/detach)
+try { attachConsoleInterceptors(); log('raw_log_attach', { path: path.join(__dirname, 'server.log') }); } catch(_) {}
+
+// Start 24h rolling rotation (daily at local midnight)
+try { startRolling24Hours(); log('raw_log_roll_schedule', {}); } catch(_) {}
+
 
 // Startup log
-log('server_start', { port: Number(process.env.PORT || 3000), logPath: LOG_PATH });
+log('server_start', { port: Number(process.env.PORT || 3060), logPath: LOG_PATH });
 
 // Request logger middleware (method, url, basic body keys)
 app.use((req, _res, next) => {
@@ -168,6 +174,112 @@ app.get('/api/logger/ping', (req, res) => {
   let exists = false;
   try { exists = fs.existsSync(LOG_PATH); } catch (_) {}
   res.json({ ok: true, logPath: LOG_PATH, exists });
+});
+
+// Server info/status
+app.get('/api/server/info', (req, res) => {
+  const info = {
+    pid: process.pid,
+    port: Number(PORT),
+    stdoutRedirected: !process.stdout.isTTY,
+    serverLogPath: SERVER_LOG_PATH,
+    debugLogPath: LOG_PATH,
+    logDetached: LOG_DETACHED,
+    nextRotationTs: (typeof getNextRotationTs === 'function') ? getNextRotationTs() : null,
+  };
+  try { log('server_info', info); } catch (_) {}
+  res.json({ ok: true, ...info });
+});
+
+// Release (detach) managed server.log stream and rename current file
+app.post('/api/server/release-log', async (req, res) => {
+  const result = { renamed: false, note: '' };
+  try {
+    try { detachConsoleFile(); } catch(_) {}
+    try {
+      if (fs.existsSync(SERVER_LOG_PATH)) {
+        const releasedPath = `${SERVER_LOG_PATH}.${Date.now()}.released`;
+        fs.renameSync(SERVER_LOG_PATH, releasedPath);
+        result.renamed = true;
+      }
+    } catch (e) {
+      result.note = `rename failed: ${e?.message}`;
+    }
+    LOG_DETACHED = true;
+    log('server_release_log', { ok: true, ...result, logDetached: LOG_DETACHED });
+    res.json({ ok: true, logDetached: LOG_DETACHED, ...result });
+  } catch (err) {
+    LOG_DETACHED = true;
+    logError('server_release_log_error', err);
+    res.status(500).json({ ok: false, error: { kind: 'release_failed', details: err.message }, logDetached: LOG_DETACHED, ...result });
+  }
+});
+
+// Rotate managed server.log: close, rename with timestamp, reopen fresh file
+app.post('/api/server/rotate-log', (req, res) => {
+  try {
+    const { ok, path: p } = rotateConsoleFile(SERVER_LOG_PATH);
+    LOG_DETACHED = false;
+    log('server_rotate_log', { ok, path: p });
+    res.json({ ok: true, path: p });
+  } catch (err) {
+    logError('server_rotate_log_error', err);
+    res.status(500).json({ ok: false, error: { kind: 'rotate_failed', details: err.message } });
+  }
+});
+
+
+// Download current or most recent rotated server log
+function getLatestRotatedLogPath() {
+  try {
+    const dir = __dirname;
+    const files = fs.readdirSync(dir);
+    const candidates = files
+      .filter(f => f.startsWith('server.log.') && (f.endsWith('.released') || f.endsWith('.rotated')))
+      .map(f => ({ name: f, full: path.join(dir, f), stat: fs.statSync(path.join(dir, f)) }))
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
+    return candidates.length ? candidates[0].full : null;
+  } catch (_) { return null; }
+}
+app.get('/api/server/log/download', (req, res) => {
+  try {
+    let filePath = SERVER_LOG_PATH;
+    if (LOG_DETACHED) {
+      const latest = getLatestRotatedLogPath();
+      if (latest) filePath = latest;
+    }
+    if (!fs.existsSync(filePath)) {
+      const latest = getLatestRotatedLogPath();
+      if (latest) filePath = latest;
+    }
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ ok: false, error: { kind: 'not_found', details: 'No log file available' } });
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+    res.sendFile(filePath);
+  } catch (err) {
+    logError('server_log_download_error', err);
+    res.status(500).json({ ok: false, error: { kind: 'download_failed', details: err.message } });
+  }
+});
+
+// Graceful shutdown (frontend should show offline state after this)
+app.post('/api/server/shutdown', (req, res) => {
+  try { log('server_shutdown_requested', { from: req.ip || 'unknown' }); } catch (_) {}
+  res.json({ ok: true, message: 'Shutting down…' });
+  setTimeout(() => process.exit(0), 150);
+});
+
+// Restart hint (actual restart depends on external supervisor like nodemon/systemd)
+app.post('/api/server/restart', (req, res) => {
+  const canAutoRestart = Boolean(process.env.AUTORESTART);
+  log('server_restart_requested', { canAutoRestart });
+  if (!canAutoRestart) {
+    return res.status(501).json({ ok: false, error: { kind: 'not_implemented', details: 'No supervisor detected. Use your process manager to restart.' }});
+  }
+  res.json({ ok: true, message: 'Restarting…' });
+  setTimeout(() => process.exit(0), 150);
 });
 
 // Expose recent in-memory debug entries for immediate inspection

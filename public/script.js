@@ -44,6 +44,141 @@
   const configModalClose = document.getElementById('config-modal-close');
 
   const servers = [];
+  // --- Server control foldout elements ---
+  const serverFoldout = document.getElementById('server-foldout');
+  const serverFoldoutToggle = document.getElementById('server-foldout-toggle');
+  const serverPortEl = document.getElementById('server-port');
+  const serverPidEl = document.getElementById('server-pid');
+  const serverNextRotationEl = document.getElementById("server-next-rotation");
+  const serverLogStateEl = document.getElementById('server-log-state');
+  const serverOfflineNote = document.getElementById('server-offline-note');
+  const btnReleaseLog = document.getElementById('btn-release-log');
+  const btnRotateLog = document.getElementById('btn-rotate-log');
+  const btnShutdown = document.getElementById('btn-shutdown-server');
+  const btnRestart = document.getElementById('btn-restart-server');
+
+  async function fetchServerInfo() {
+    try {
+      const res = await fetch('/api/server/info', { cache: 'no-store' });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      return data;
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
+
+  function renderServerControl(info) {
+    if (!serverFoldout) return;
+    const offline = !info || info.ok === false;
+    if (offline) {
+      serverPortEl.textContent = '-';
+      serverPidEl.textContent = '-';
+      serverLogStateEl.textContent = 'offline';
+      serverLogStateEl.className = 'badge';
+      serverOfflineNote.classList.remove('hidden');
+      btnReleaseLog.disabled = true;
+      btnShutdown.disabled = true;
+      btnRestart.disabled = true;
+      return;
+    }
+    serverOfflineNote.classList.add('hidden');
+    serverPortEl.textContent = String(info.port ?? '');
+    serverPidEl.textContent = String(info.pid ?? '');
+    if (serverNextRotationEl) {
+      const ts = info.nextRotationTs || null;
+      serverNextRotationEl.textContent = ts ? new Date(ts).toLocaleString() : '—';
+    }
+    const detached = !!info.logDetached;
+    const redirected = !!info.stdoutRedirected;
+    serverLogStateEl.textContent = detached ? 'log detached' : (redirected ? 'logging attached' : 'stdout tty');
+    serverLogStateEl.className = 'badge' + (detached ? ' ok' : '');
+    btnReleaseLog.disabled = detached; // only once per run
+    btnShutdown.disabled = false;
+    btnRestart.disabled = false;
+  }
+
+  async function refreshServerControl() {
+    const info = await fetchServerInfo();
+    renderServerControl(info);
+  }
+  // Foldout toggle
+  if (serverFoldoutToggle && serverFoldout) {
+    serverFoldoutToggle.addEventListener('click', () => {
+      const nowHidden = serverFoldout.classList.toggle('hidden');
+      const isOpen = !nowHidden;
+      serverFoldoutToggle.classList.toggle('open', isOpen);
+      serverFoldoutToggle.setAttribute('aria-expanded', String(isOpen));
+      if (isOpen) {
+        void refreshServerControl();
+      }
+    });
+  }
+
+
+  // Wire buttons
+  if (btnReleaseLog) {
+    btnReleaseLog.addEventListener('click', async () => {
+      btnReleaseLog.disabled = true;
+      try {
+        const res = await fetch('/api/server/release-log', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          alert('Failed to release logfile: ' + (data?.error?.details || res.status));
+        }
+      } catch (err) {
+        alert('Failed to release logfile: ' + (err?.message || String(err)));
+      } finally {
+        await refreshServerControl();
+      }
+    });
+  }
+  if (btnShutdown) {
+    btnShutdown.addEventListener('click', async () => {
+      if (!window.confirm('Shut down the backend server now? The UI will become frontend-only until you restart it.')) return;
+      try {
+        await fetch('/api/server/shutdown', { method: 'POST' });
+      } catch (_) {}
+      setTimeout(refreshServerControl, 500);
+    });
+  }
+  if (btnRestart) {
+    btnRestart.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/server/restart', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          const msg = data?.error?.details || 'Restart is not available unless a supervisor (e.g., nodemon) restarts the process.';
+          alert(msg);
+        }
+      } catch (err) {
+        alert('Restart failed: ' + (err?.message || String(err)));
+      } finally {
+        setTimeout(refreshServerControl, 800);
+      }
+    });
+  }
+  if (btnRotateLog) {
+    btnRotateLog.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/server/rotate-log', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          alert('Rotate failed: ' + (data?.error?.details || res.status));
+        }
+      } catch (err) {
+        alert('Rotate failed: ' + (err?.message || String(err)));
+      } finally {
+        await refreshServerControl();
+      }
+    });
+  }
+
+
+  // Initial paint + periodic update
+  refreshServerControl().catch(() => {});
+  setInterval(refreshServerControl, 5000);
+
   let isLoadingConfig = false;
   let currentConfig = null;
   let currentConfigFileName = '';

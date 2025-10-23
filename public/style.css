@@ -766,3 +766,76 @@ section h2 {
   font-weight: 500;
   margin-top: 6px;
 }
+
+
+/* Foldout dock for server/log controls */
+.config-actions { position: relative; }
+.dock-toggle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 28px;
+  height: 28px;
+  line-height: 26px;
+  text-align: center;
+  border-radius: 4px;
+  border: 1px solid #2d3748;
+  background-color: #1f2733;
+  color: #e2e8f0;
+  cursor: pointer;
+  padding: 0;
+}
+.dock-toggle:hover { background-color: #2d3748; }
+.dock-toggle.open { transform: rotate(180deg); }
+
+.dock-panel {
+  background-color: #1a202c;
+  border: 1px solid #2d3748;
+  border-radius: 6px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+
+/* Dock panel button styles to match config actions */
+.dock-panel .secondary {
+  padding: 9px 14px;
+  border-radius: 4px;
+  border: 1px solid #2d3748;
+  background-color: #1f2733;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.dock-panel .secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.dock-panel .secondary:hover:not(:disabled) {
+  background-color: #2d3748;
+}
+.dock-panel .danger {
+  padding: 9px 14px;
+  border-radius: 4px;
+  border: 1px solid #4a1d1d;
+  background-color: #742a2a;
+  color: #fed7d7;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.dock-panel .danger:hover:not(:disabled) {
+  background-color: #9b2c2c;
+  border-color: #742a2a;
+}
+
+/* Minor styling for server-control rows */
+.server-control-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.server-control-item code { color: #cbd5e0; }
+.server-control-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.badge { padding: 2px 6px; border-radius: 999px; font-size: 0.75rem; background-color: #2d3748; color: #cbd5e0; }
+.badge.ok { background-color: #22543d; color: #68d391; }
+.server-offline { font-size: 0.85rem; color: #a0aec0; margin-top: 8px; }
