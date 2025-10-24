@@ -67,6 +67,7 @@
   const btnCloseAllSessions = document.getElementById('btn-close-all-sessions');
   const btnHideWorkflow = document.getElementById('btn-hide-workflow');
   let workflowSession = null;
+  let isClosingSessionProgrammatically = false; // Flag to prevent checkbox change event loop
 
   // --- Log viewer foldout elements ---
   const logviewFoldout = document.getElementById('logview-foldout');
@@ -359,31 +360,78 @@
 	  }
 	  if (btnCloseAllSessions) {
 	    btnCloseAllSessions.addEventListener('click', async () => {
+	      console.log('[DEBUG] Close All Sessions button clicked');
 	      const activeSessions = servers.filter(s => s.activeSessionId);
-	      if (activeSessions.length === 0) {
+	      console.log('[DEBUG] Active sessions count:', activeSessions.length);
+	      const hasWorkflowSession = workflowSession !== null;
+	      console.log('[DEBUG] Has workflow session:', hasWorkflowSession);
+
+	      if (activeSessions.length === 0 && !hasWorkflowSession) {
 	        alert('No active sessions to close.');
 	        return;
 	      }
 
-	      const confirmed = confirm(`Close ${activeSessions.length} active session(s)?`);
-	      if (!confirmed) return;
+	      const sessionCount = activeSessions.length + (hasWorkflowSession ? 1 : 0);
+	      const confirmed = confirm(`Close ${sessionCount} active session(s)?`);
+	      if (!confirmed) {
+	        console.log('[DEBUG] User cancelled confirmation');
+	        return;
+	      }
 
+	      console.log('[DEBUG] Closing server sessions...');
 	      for (const entry of activeSessions) {
-	        if (entry.activeSessionId) {
-	          await closeSessionForEntry(entry);
+	        // Skip workflow placeholder sessions (they don't have real MCP sessions to close)
+	        if (entry.activeSessionId && !entry.isWorkflowSession) {
+	          await handleCloseServerSession(entry);
+	        } else if (entry.isWorkflowSession) {
+	          // Just clear the placeholder without calling backend
+	          entry.activeSessionId = null;
+	          entry.sessionCreatedAt = null;
+	          entry.sessionReused = false;
+	          entry.isWorkflowSession = false;
 	        }
 	      }
 
-	      if (workflowKeepSessionsOpenCheckbox) workflowKeepSessionsOpenCheckbox.checked = false;
-	      updateWorkflowPanel();
+	      console.log('[DEBUG] Resetting workflow and unchecking checkbox');
+	      console.log('[DEBUG] workflowSession before reset:', workflowSession);
+
+	      // Set flag to prevent checkbox change event from re-creating session
+	      isClosingSessionProgrammatically = true;
+
+	      // Reset workflow first
+	      resetWorkflow();
+	      console.log('[DEBUG] workflowSession after reset:', workflowSession);
+
+	      // Uncheck checkbox (change event will be ignored due to flag)
+	      if (workflowKeepSessionsOpenCheckbox) {
+	        console.log('[DEBUG] Checkbox before:', workflowKeepSessionsOpenCheckbox.checked);
+	        workflowKeepSessionsOpenCheckbox.checked = false;
+	        console.log('[DEBUG] Checkbox after:', workflowKeepSessionsOpenCheckbox.checked);
+	      }
+
 	      renderServers();
+	      console.log('[DEBUG] Close All Sessions completed - showing alert');
 	      alert('All sessions closed.');
+	      console.log('[DEBUG] Alert dismissed');
+
+	      // Clear flag after everything is done
+	      isClosingSessionProgrammatically = false;
 	    });
 	  }
 	  if (workflowKeepSessionsOpenCheckbox) {
 	    workflowKeepSessionsOpenCheckbox.addEventListener('change', async () => {
+	      console.log('[DEBUG] Checkbox change event fired, checked:', workflowKeepSessionsOpenCheckbox.checked);
+	      console.log('[DEBUG] isClosingSessionProgrammatically:', isClosingSessionProgrammatically);
+
+	      // Ignore change event if we're programmatically closing the session
+	      if (isClosingSessionProgrammatically) {
+	        console.log('[DEBUG] Ignoring checkbox change event (programmatic close in progress)');
+	        return;
+	      }
+
 	      if (workflowKeepSessionsOpenCheckbox.checked) {
 	        // Checked - start workflow session
+	        console.log('[DEBUG] Starting workflow session');
 	        const wf = getOrStartWorkflow();
 	        updateWorkflowPanel();
 
@@ -400,14 +448,24 @@
 	        renderServers();
 	      } else {
 	        // Unchecked - close all active sessions
+	        console.log('[DEBUG] Checkbox unchecked, closing sessions');
 	        const activeSessions = servers.filter(s => s.activeSessionId);
+	        console.log('[DEBUG] Active sessions in change handler:', activeSessions.length);
 	        if (activeSessions.length > 0) {
 	          for (const entry of activeSessions) {
-	            if (entry.activeSessionId) {
-	              await closeSessionForEntry(entry);
+	            // Skip workflow placeholder sessions (they don't have real MCP sessions to close)
+	            if (entry.activeSessionId && !entry.isWorkflowSession) {
+	              await handleCloseServerSession(entry);
+	            } else if (entry.isWorkflowSession) {
+	              // Just clear the placeholder without calling backend
+	              entry.activeSessionId = null;
+	              entry.sessionCreatedAt = null;
+	              entry.sessionReused = false;
+	              entry.isWorkflowSession = false;
 	            }
 	          }
 	        }
+	        console.log('[DEBUG] Calling resetWorkflow from change handler');
 	        resetWorkflow();
 	        renderServers();
 	      }
@@ -568,22 +626,35 @@
 	  return workflowSession;
 	}
 	function resetWorkflow() {
+	  console.log('[DEBUG] resetWorkflow called, clearing workflowSession');
 	  workflowSession = null;
+	  console.log('[DEBUG] workflowSession is now:', workflowSession);
 	  updateWorkflowPanel();
+	  console.log('[DEBUG] updateWorkflowPanel completed');
 	}
 	function updateWorkflowPanel() {
 	  try {
-	    if (!workflowIdEl || !workflowCreatedEl) return;
+	    console.log('[DEBUG] updateWorkflowPanel called, workflowSession:', workflowSession);
+	    if (!workflowIdEl || !workflowCreatedEl) {
+	      console.log('[DEBUG] workflowIdEl or workflowCreatedEl not found');
+	      return;
+	    }
 	    if (!workflowSession) {
+	      console.log('[DEBUG] No workflow session, setting UI to Closed');
 	      workflowIdEl.textContent = '—';
 	      workflowCreatedEl.textContent = '—';
 	      if (workflowStateEl) workflowStateEl.textContent = 'Closed';
+	      console.log('[DEBUG] UI updated to Closed state');
 	      return;
 	    }
+	    console.log('[DEBUG] Workflow session exists, setting UI to Open');
 	    workflowIdEl.textContent = workflowSession.id;
 	    workflowCreatedEl.textContent = new Date(workflowSession.createdAt).toLocaleString();
 	    if (workflowStateEl) workflowStateEl.textContent = 'Open';
-	  } catch (_) {}
+	    console.log('[DEBUG] UI updated to Open state');
+	  } catch (err) {
+	    console.error('[DEBUG] Error in updateWorkflowPanel:', err);
+	  }
 	}
 	function generateCombinedWorkflowReport(allServers, wf) {
 	  const lines = [];
@@ -743,6 +814,19 @@
         _expanded: expanded
       });
     });
+
+    // Propagate workflow session to newly loaded servers if workflow is active
+    if (workflowSession && workflowKeepSessionsOpenCheckbox && workflowKeepSessionsOpenCheckbox.checked) {
+      servers.forEach((entry) => {
+        if (entry.source === 'config' && !entry.activeSessionId) {
+          entry.activeSessionId = workflowSession.id;
+          entry.sessionCreatedAt = workflowSession.createdAt;
+          entry.sessionReused = false;
+          entry.isWorkflowSession = true;
+        }
+      });
+    }
+
     refreshConfigStatusLabel();
     renderServers();
   }
