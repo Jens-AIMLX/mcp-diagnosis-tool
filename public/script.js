@@ -384,8 +384,20 @@
 	    workflowKeepSessionsOpenCheckbox.addEventListener('change', async () => {
 	      if (workflowKeepSessionsOpenCheckbox.checked) {
 	        // Checked - start workflow session
-	        getOrStartWorkflow();
+	        const wf = getOrStartWorkflow();
 	        updateWorkflowPanel();
+
+	        // Propagate workflow session info to all servers for immediate display
+	        for (const entry of servers) {
+	          if (!entry.activeSessionId) {
+	            // Mark as workflow session (will be replaced by actual session on first tool call)
+	            entry.activeSessionId = wf.id;
+	            entry.sessionCreatedAt = wf.createdAt;
+	            entry.sessionReused = false;
+	            entry.isWorkflowSession = true; // Flag to distinguish from actual MCP sessions
+	          }
+	        }
+	        renderServers();
 	      } else {
 	        // Unchecked - close all active sessions
 	        const activeSessions = servers.filter(s => s.activeSessionId);
@@ -404,7 +416,16 @@
 
 	  // Initialize workflow panel on page load
 	  if (workflowKeepSessionsOpenCheckbox && workflowKeepSessionsOpenCheckbox.checked) {
-	    getOrStartWorkflow();
+	    const wf = getOrStartWorkflow();
+	    // Propagate workflow session info to all servers for immediate display
+	    for (const entry of servers) {
+	      if (!entry.activeSessionId) {
+	        entry.activeSessionId = wf.id;
+	        entry.sessionCreatedAt = wf.createdAt;
+	        entry.sessionReused = false;
+	        entry.isWorkflowSession = true;
+	      }
+	    }
 	  }
 	  updateWorkflowPanel();
 
@@ -963,9 +984,10 @@
       const createdRaw = hasSession ? entry.sessionCreatedAt : entry.hiddenSessionCreatedAt;
       const createdText = createdRaw ? new Date(createdRaw).toLocaleString() : 'Unknown';
       const stateText = entry.sessionHidden ? 'Hidden' : (hasSession ? 'Open' : 'Closed');
+      const sessionTypeBadge = entry.isWorkflowSession ? ' <span class="session-type-badge">(workflow)</span>' : '';
       html += '<div class="session-status active">';
       html += '<div class="session-info-item"><span class="session-info-key">ID:</span> '
-           + `<span class="session-status-id">${displayId}</span></div>`;
+           + `<span class="session-status-id">${displayId}${sessionTypeBadge}</span></div>`;
       html += '<div class="session-info-item"><span class="session-info-key">Created:</span> '
            + `<span class="session-info-created">${escapeHtml(createdText)}</span></div>`;
       html += '<div class="session-info-item"><span class="session-info-key">State:</span> '
@@ -1250,6 +1272,7 @@
           entry.activeSessionId = null;
           entry.sessionCreatedAt = null;
           entry.sessionReused = false;
+          entry.isWorkflowSession = false;
           entry.sessionHidden = true;
           entry.hiddenSessionId = prevId;
           entry.hiddenSessionCreatedAt = prevCreated;
@@ -2163,6 +2186,7 @@
 
       entry.activeSessionId = null;
       entry.sessionReused = false;
+      entry.isWorkflowSession = false;
       renderServers();
     } catch (err) {
       alert(`Failed to close session: ${err.message}`);
@@ -2328,6 +2352,7 @@
         // Clear session info from entry
         entry.activeSessionId = null;
         entry.sessionCreatedAt = null;
+        entry.isWorkflowSession = false;
 
         // Update UI
         updateModalSessionInfo(entry);
@@ -2510,10 +2535,12 @@
           entry.activeSessionId = data.sessionId;
           entry.sessionReused = data.sessionReused;
           entry.sessionCreatedAt = data.sessionCreatedAt;
+          entry.isWorkflowSession = false; // Replace workflow placeholder with actual MCP session
         } else {
           entry.activeSessionId = null;
           entry.sessionReused = false;
           entry.sessionCreatedAt = null;
+          entry.isWorkflowSession = false;
         }
 
         const resultPayload = { ok: true, output: normalizedOut };
@@ -2971,6 +2998,7 @@
         entry.activeSessionId = null;
         entry.sessionCreatedAt = null;
         entry.sessionReused = false;
+        entry.isWorkflowSession = false;
         entry.sessionHidden = true;
         entry.hiddenSessionId = prevId;
         entry.hiddenSessionCreatedAt = prevCreated;
