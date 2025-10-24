@@ -61,12 +61,9 @@
   // --- Workflow controls ---
   const workflowIdEl = document.getElementById('workflow-id');
   const workflowCreatedEl = document.getElementById('workflow-created');
-  const workflowCallsEl = document.getElementById('workflow-calls');
   const workflowStateEl = document.getElementById('workflow-state');
-  const workflowActiveSessionsEl = document.getElementById('workflow-active-sessions');
   const workflowKeepSessionsOpenCheckbox = document.getElementById('workflow-keep-sessions-open');
   const btnExportWorkflow = document.getElementById('btn-export-workflow');
-  const btnResetWorkflow = document.getElementById('btn-reset-workflow');
   const btnCloseAllSessions = document.getElementById('btn-close-all-sessions');
   const btnHideWorkflow = document.getElementById('btn-hide-workflow');
   let workflowSession = null;
@@ -360,28 +357,6 @@
 	      }
 	    });
 	  }
-	  if (btnResetWorkflow) {
-	    btnResetWorkflow.addEventListener('click', async () => {
-	      // Close all active sessions before resetting
-	      const activeSessions = servers.filter(s => s.activeSessionId);
-	      if (activeSessions.length > 0) {
-	        const confirmed = confirm(`This will close ${activeSessions.length} active session(s). Continue?`);
-	        if (!confirmed) return;
-
-	        for (const entry of activeSessions) {
-	          if (entry.activeSessionId) {
-	            await closeSessionForEntry(entry);
-	          }
-	        }
-	      }
-
-	      workflowSession = null;
-	      if (workflowKeepSessionsOpenCheckbox) workflowKeepSessionsOpenCheckbox.checked = false;
-	      updateWorkflowPanel();
-	      renderServers();
-	      alert('Workflow reset.');
-	    });
-	  }
 	  if (btnCloseAllSessions) {
 	    btnCloseAllSessions.addEventListener('click', async () => {
 	      const activeSessions = servers.filter(s => s.activeSessionId);
@@ -407,7 +382,11 @@
 	  }
 	  if (workflowKeepSessionsOpenCheckbox) {
 	    workflowKeepSessionsOpenCheckbox.addEventListener('change', async () => {
-	      if (!workflowKeepSessionsOpenCheckbox.checked) {
+	      if (workflowKeepSessionsOpenCheckbox.checked) {
+	        // Checked - start workflow session
+	        getOrStartWorkflow();
+	        updateWorkflowPanel();
+	      } else {
 	        // Unchecked - close all active sessions
 	        const activeSessions = servers.filter(s => s.activeSessionId);
 	        if (activeSessions.length > 0) {
@@ -416,11 +395,16 @@
 	              await closeSessionForEntry(entry);
 	            }
 	          }
-	          updateWorkflowPanel();
-	          renderServers();
 	        }
+	        resetWorkflow();
+	        renderServers();
 	      }
 	    });
+	  }
+
+	  // Initialize workflow panel on page load
+	  if (workflowKeepSessionsOpenCheckbox && workflowKeepSessionsOpenCheckbox.checked) {
+	    getOrStartWorkflow();
 	  }
 	  updateWorkflowPanel();
 
@@ -568,23 +552,16 @@
 	}
 	function updateWorkflowPanel() {
 	  try {
-	    if (!workflowIdEl || !workflowCreatedEl || !workflowCallsEl) return;
+	    if (!workflowIdEl || !workflowCreatedEl) return;
 	    if (!workflowSession) {
 	      workflowIdEl.textContent = '—';
 	      workflowCreatedEl.textContent = '—';
-	      workflowCallsEl.textContent = '0';
 	      if (workflowStateEl) workflowStateEl.textContent = 'Closed';
-	      if (workflowActiveSessionsEl) workflowActiveSessionsEl.textContent = '0';
 	      return;
 	    }
 	    workflowIdEl.textContent = workflowSession.id;
 	    workflowCreatedEl.textContent = new Date(workflowSession.createdAt).toLocaleString();
-	    workflowCallsEl.textContent = String(workflowSession.calls.length || 0);
 	    if (workflowStateEl) workflowStateEl.textContent = 'Open';
-
-	    // Count active sessions across all servers
-	    const activeSessions = servers.filter(s => s.activeSessionId).length;
-	    if (workflowActiveSessionsEl) workflowActiveSessionsEl.textContent = String(activeSessions);
 	  } catch (_) {}
 	}
 	function generateCombinedWorkflowReport(allServers, wf) {

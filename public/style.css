@@ -55,15 +55,28 @@ section h2 {
   color: #94a3b8;
 }
 
+/* Unified top frame containing subtitle, buttons, session info, and foldout */
+.unified-top-frame {
+  background-color: #1a202c;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid #2d3748;
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.unified-top-frame .section-subtitle {
+  margin: 0 0 12px 0;
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
 .config-actions {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  background-color: #1a202c;
-  padding: 16px;
-  border-radius: 6px;
-  border: 1px solid #2d3748;
+  margin-bottom: 12px;
 }
 
 #load-json-btn,
@@ -585,15 +598,13 @@ section h2 {
 }
 
 .session-status {
-  margin-top: 12px;
   padding: 8px 12px;
   border-radius: 4px;
   background-color: #2d3748;
   font-size: 0.85rem;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .session-status.active {
@@ -650,8 +661,7 @@ section h2 {
 .session-info-key {
   font-weight: 500;
   color: #94a3b8;
-  font-size: 0.8rem;
-  min-width: 50px;
+  font-size: 0.85rem;
 }
 
 .session-info-value {
@@ -661,14 +671,40 @@ section h2 {
   word-break: break-all;
 }
 
-/* Workflow Session Status Block */
+/* Workflow Session Status Block (now integrated into unified-top-frame) */
 .session-status-block {
   margin-bottom: 20px;
+  position: relative;
 }
 
-.session-status-header {
+.unified-top-frame .session-status {
+  margin-bottom: 12px;
+}
+
+.unified-top-frame .session-controls-row {
   margin-bottom: 8px;
-  font-size: 1rem;
+}
+
+.unified-top-frame .session-controls-row:last-of-type {
+  margin-bottom: 0;
+}
+
+.session-controls-left {
+  display: flex;
+  gap: 8px;
+}
+
+.session-controls-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.session-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .modal-actions {
@@ -781,7 +817,6 @@ section h2 {
 
 
 /* Foldout dock for server/log controls */
-.config-actions { position: relative; }
 .dock-toggle {
   position: absolute;
   right: 8px;

@@ -14,18 +14,50 @@
 
     <main>
       <section id="config-section">
-        <h2>Load MCP Configuration</h2>
-        <p class="section-subtitle">Load a standard <code>mcp.json</code> or a Codex-compatible <code>config.toml</code>. Convert between formats with a single click.</p>
-        <div class="config-actions">
-          <button type="button" id="load-json-btn">Load standard mcp.json</button>
-          <button type="button" id="load-toml-btn">Load mcp.toml</button>
-          <button type="button" id="add-json-server-btn" class="secondary">Add server (JSON)</button>
-          <button type="button" id="add-toml-server-btn" class="secondary">Add server (TOML)</button>
-          <button type="button" id="save-json-btn" class="secondary" disabled>Save as JSON</button>
-          <button type="button" id="save-toml-btn" class="secondary" disabled>Save as TOML</button>
-          <span id="config-file-name" class="config-file-name">No file selected</span>
+        <!-- Unified top frame containing subtitle, buttons, session info, and foldout toggle -->
+        <div class="unified-top-frame">
+          <p class="section-subtitle">Load a standard <code>mcp.json</code> or a Codex-compatible <code>config.toml</code>. Convert between formats with a single click.</p>
+
+          <div class="config-actions">
+            <button type="button" id="load-json-btn">Load standard mcp.json</button>
+            <button type="button" id="load-toml-btn">Load mcp.toml</button>
+            <button type="button" id="add-json-server-btn" class="secondary">Add server (JSON)</button>
+            <button type="button" id="add-toml-server-btn" class="secondary">Add server (TOML)</button>
+            <button type="button" id="save-json-btn" class="secondary" disabled>Save as JSON</button>
+            <button type="button" id="save-toml-btn" class="secondary" disabled>Save as TOML</button>
+            <span id="config-file-name" class="config-file-name">No file selected</span>
+          </div>
+
+          <!-- Session Status (integrated into top frame) -->
+          <div class="session-status active" id="workflow-session-display">
+            <span class="session-info-key">ID:</span>
+            <span class="session-status-id" id="workflow-id">—</span>
+            <span class="session-info-key">Created:</span>
+            <span class="session-info-created" id="workflow-created">—</span>
+            <span class="session-info-key">State:</span>
+            <span class="session-info-state" id="workflow-state">Open</span>
+          </div>
+
+          <div class="session-controls-row">
+            <div class="session-controls-left">
+              <button type="button" id="btn-hide-workflow" class="secondary" disabled>Hide session</button>
+              <button type="button" id="btn-close-all-sessions" class="secondary">Close session</button>
+            </div>
+            <div class="session-controls-right">
+              <button type="button" id="btn-export-workflow">Export this workflow</button>
+            </div>
+          </div>
+
+          <div class="session-controls-row">
+            <label class="checkbox-inline">
+              <input type="checkbox" id="workflow-keep-sessions-open"/>
+              <span>Keep sessions open (for multi-step workflows across servers)</span>
+            </label>
+          </div>
+
           <button id="server-foldout-toggle" class="dock-toggle" aria-expanded="false" title="Server & logs">▾</button>
         </div>
+
         <div id="server-foldout" class="dock-panel hidden" role="region" aria-label="Server and logs controls">
           <div id="server-control" class="detail-block">
             <div class="server-control-row">
@@ -45,48 +77,6 @@
             </div>
             <div id="server-offline-note" class="server-offline hidden">Backend offline — UI is now frontend-only.</div>
           </div>
-            <!-- Workflow Session Status (always visible, outside server foldouts) -->
-            <div id="workflow-session-status" class="detail-block session-status-block">
-              <div class="session-status-header">
-                <strong>Workflow Session</strong>
-              </div>
-              <div class="session-status active" id="workflow-session-display">
-                <div class="session-info-item">
-                  <span class="session-info-key">ID:</span>
-                  <span class="session-status-id" id="workflow-id">—</span>
-                </div>
-                <div class="session-info-item">
-                  <span class="session-info-key">Created:</span>
-                  <span class="session-info-created" id="workflow-created">—</span>
-                </div>
-                <div class="session-info-item">
-                  <span class="session-info-key">State:</span>
-                  <span class="session-info-state" id="workflow-state">Open</span>
-                </div>
-                <div class="session-info-item">
-                  <span class="session-info-key">Calls:</span>
-                  <span id="workflow-calls">0</span>
-                </div>
-                <div class="session-info-item">
-                  <span class="session-info-key">Active Sessions:</span>
-                  <span id="workflow-active-sessions">0</span>
-                </div>
-              </div>
-              <div class="session-controls-row">
-                <button type="button" id="btn-hide-workflow" class="secondary" disabled>Hide session</button>
-                <button type="button" id="btn-close-all-sessions" class="secondary">Close all sessions</button>
-                <button type="button" id="btn-export-workflow">Export workflow</button>
-              </div>
-              <div class="session-controls-row">
-                <label class="checkbox-inline">
-                  <input type="checkbox" id="workflow-keep-sessions-open"/>
-                  <span>Keep sessions open (for multi-step workflows across servers)</span>
-                </label>
-              </div>
-              <div class="session-controls-row">
-                <button type="button" id="btn-reset-workflow" class="secondary">Reset workflow</button>
-              </div>
-            </div>
 
         <div id="logview-foldout" class="dock-panel hidden" role="region" aria-label="Log viewer">
           <div class="server-control-actions">
