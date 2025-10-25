@@ -1,0 +1,42 @@
+version: 1
+exported_at: '2025-10-24T13:02:48.057Z'
+servers:
+  -
+    name: 'playwright'
+    spec: {}
+  -
+    name: 'cognitive-visual-analytics'
+    spec: {}
+steps:
+  -
+    action: 'call playwright tool browser_navigate url=''http://localhost:3060/'''
+    server: 'playwright'
+    tool: 'browser_navigate'
+    args:
+      url: 'http://localhost:3060/'
+    keep_session_open: true
+    started_at: '2025-10-24T11:35:17.368Z'
+    finished_at: '2025-10-24T11:35:19.417Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_navigate url=''http://localhost:3060/'''
+    server: 'playwright'
+    tool: 'browser_navigate'
+    args:
+      url: 'http://localhost:3060/'
+    keep_session_open: true
+    started_at: '2025-10-24T13:02:07.044Z'
+    finished_at: '2025-10-24T13:02:07.209Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call cognitive-visual-analytics tool cognitive_visual_dimensions'
+    server: 'cognitive-visual-analytics'
+    tool: 'cognitive_visual_dimensions'
+    args: {}
+    keep_session_open: true
+    started_at: '2025-10-24T13:02:24.361Z'
+    finished_at: '2025-10-24T13:02:27.018Z'
+    ok: true
+    warmup: false

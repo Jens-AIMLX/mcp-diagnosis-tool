@@ -6,6 +6,71 @@ This document explains the different test strategies used in the MCP Diagnosis T
 
 ---
 
+## CRITICAL RULES FOR AI AGENT
+
+### SUPREME RULE
+**NEVER KILL ANYTHING. EVER.**
+- Not processes, servers, terminals, services - nothing
+- Scripts handle killing/restarting - only way allowed, only when instructed
+- If you think you need to kill something → STOP, state why, ASK, WAIT
+
+### CORE PRINCIPLE
+**Confused → STOP and ASK**
+
+**Confusion = any of:**
+- Don't understand why something happens
+- Unexpected behavior
+- Think instructions contradict
+- Need to do something not explicitly requested
+- Feel pressure to "fix" something
+- Considering destructive action
+
+**When confused:**
+1. STOP immediately
+2. State: "I am confused about [X]"
+3. ASK for guidance
+4. WAIT and follow exactly
+
+**Never:** Try to figure it out myself, take action on assumptions, "just try something", continue with my theory
+
+### INSTRUCTION HIERARCHY (Absolute Priority)
+
+1. **Never kill anything** (supreme, no exceptions)
+2. **Confused → STOP and ASK** (immediate halt until guidance)
+3. **Jens corrects me → I'm wrong** (pivot immediately, no defending)
+4. **Do ONLY what was explicitly requested** (nothing more, nothing less)
+5. **Jens's evidence = absolute truth** (never dismiss as "old/cached")
+6. **MANDATORY QA PROTOCOL = mandatory** (STOP, gather evidence, trace execution, verify assumptions)
+7. **Follow this verification_management.md exactly** (no additions, no "improvements")
+
+### FORBIDDEN WITHOUT EXPLICIT PERMISSION
+
+Kill/restart anything • Install/uninstall • Commit/push • Merge • Deploy • Modify package files directly • Any destructive action
+
+**If needed:** STOP, state why, ASK, WAIT for explicit "yes, do [specific action]"
+
+### 5-CHECK BEFORE ANY ACTION
+
+1. **Explicitly requested?** No → STOP and ASK
+2. **Forbidden action?** Yes → STOP and ASK
+3. **Confused?** Yes → STOP and ASK
+4. **Follows exact protocol?** No → STOP and ASK
+5. **Destructive?** Yes → STOP and ASK
+
+**ANY check fails → STOP and ASK**
+
+### TOKEN EFFICIENCY
+
+- Ask when confused: 500 tokens, 2 min, progress continues
+- Act when confused: 65,000 tokens, hours wasted, work reset
+- **Asking = 130x more efficient**
+
+### THE SCOREBOARD
+**Jens: 100% accurate | Agent deviations: 100% failures**
+**Only winning move: Follow instructions exactly**
+
+---
+
 ## Test Strategies
 
 ### 1. Data-Oriented Testing (Automated Tests)
@@ -72,7 +137,8 @@ test('close session updates data correctly', async () => {
 3. Perform actions step-by-step
 4. Observe console logs in real-time
 5. Check UI changes after each action
-6. Take screenshots for documentation
+6. if in doubt or unclear ui interaction feddback : Take screenshots for analysis with cogntive-visual-dimensions
+7. Analyze if step shows expected visual behaviour by anaylzing cognitive-visual-dimensions result
 
 **Example workflow:**
 ```
@@ -102,24 +168,107 @@ test('close session updates data correctly', async () => {
 
 ---
 
-### 3. User Perspective Verification (Final Success Criterion)
+### 3. Full User Perspective Verification (Final Success Criterion)
+
+**What it is:**
+- Automated visual verification using `cognitive-visual-dimensions` tool
+- Tests the feature from the user's actual workflow perspective
+- Uses real data, real workflows, real use cases
+- Provides objective, neutral visual analysis
+- **This is the PRIMARY validation strategy for UI-involved features**
+
+**Verification Strategy Hierarchy:**
+
+#### 3.1 Primary: Automated Visual Verification with cognitive-visual-dimensions
+
+**What it is:**
+- Developer performs the actual user workflow manually
+- Takes screenshots at each critical step
+- Uses `cognitive-visual-dimensions` to analyze screenshots objectively
+- Visual analysis provides neutral, unbiased verification
+- **No developer bias** - tool analyzes what's actually visible
+
+**When to use:**
+- ✅ **ALWAYS** as primary verification for UI-involved features
+- ✅ After developer testing shows success
+- ✅ Before declaring a bug fix complete
+- ✅ Before merging code to production
+
+**How to use:**
+1. Developer completes fix and performs manual testing
+2. Developer executes the ACTUAL user workflow (not simplified scenarios)
+3. Developer takes screenshots at each critical step
+4. Developer uses `cognitive-visual-dimensions` to analyze each screenshot
+5. Tool provides objective analysis: elements, positions, dimensions, colors, text
+6. Developer verifies the analysis shows correct user experience
+7. **Only when visual analysis confirms success** is the fix considered complete
+
+**Example workflow:**
+```
+1. Navigate to http://localhost:3060
+2. Load mcp-config-subconfigs.json (4 servers - real user scenario)
+3. Take screenshot → cognitive-visual-dimensions analysis
+   ✅ Verify: 4 servers visible, correct layout
+4. Check "Keep sessions open" checkbox
+5. Take screenshot → cognitive-visual-dimensions analysis
+   ✅ Verify: Checkbox checked, State: Open, ID visible
+6. Click "Close session" → Click OK
+7. Take screenshot → cognitive-visual-dimensions analysis
+   ✅ Verify: State: Closed, ID: —, Checkbox: Unchecked
+```
+
+**Why this is valid:**
+- ✅ Developer and stakeholder agree on the test workflow beforehand
+- ✅ Visual analysis is neutral (no developer bias)
+- ✅ Tests real user scenarios (not simplified)
+- ✅ Provides objective visual evidence
+- ✅ Faster than manual user testing
+- ✅ Repeatable and consistent
+
+**Benefits:**
+- ✅ **Objectification instead of bias:** Tool analyzes what's actually visible
+- ✅ **Automated visual verification:** Faster feedback loop
+- ✅ **Neutral analysis:** No developer assumptions
+- ✅ **User perspective maintained:** Tests real workflows
+- ✅ **Visual evidence:** Screenshots + analysis data
+
+---
+
+#### 3.2 Fallback: Manual Visual Verification (if cognitive-visual-dimensions unavailable)
+
+**When to use:**
+- ⚠️ Only if `cognitive-visual-dimensions` is unavailable
+- ⚠️ Only if `cognitive-visual-dimensions` does not deliver conclusive results
+- ⚠️ As a temporary measure until tool is fixed
+
+**How to use:**
+1. Developer completes fix and performs manual testing
+2. Developer executes the ACTUAL user workflow
+3. Developer takes screenshots at each critical step
+4. Developer manually analyzes screenshots for correct visual state
+5. Developer documents findings with visual evidence
+6. **Proceed to User-Provided Visual Verification (3.3) for final confirmation**
+
+**Limitations:**
+- ❌ Developer bias (analyzing own work)
+- ❌ May miss subtle visual issues
+- ❌ Not objective
+- ❌ **MUST be followed by User-Provided Visual Verification**
+
+---
+
+#### 3.3 Final Fallback: User-Provided Visual Verification
+
+**When to use:**
+- ⚠️ Only if both cognitive-visual-dimensions AND manual visual verification are inconclusive
+- ✅ **ALWAYS** as final confirmation when automated verification is unavailable
+- ✅ When user reports issues that automated verification didn't catch
 
 **What it is:**
 - **The user** tests the feature in their actual environment
 - Uses real data, real workflows, real use cases
 - Provides visual evidence (screenshots) showing what they see
-- **This is the ONLY valid success criterion for UI-involved features**
-
-**When to use:**
-- ✅ **ALWAYS** for final verification of UI-involved features
-- ✅ After developer testing shows success
-- ✅ Before declaring a bug fix complete
-- ✅ Before merging code to production
-
-**When NOT to skip:**
-- ❌ **NEVER** skip this for UI features
-- ❌ Even if automated tests pass
-- ❌ Even if developer testing shows success
+- **This is the FINAL fallback success criterion for UI-involved features**
 
 **How to use:**
 1. Developer completes fix and performs manual testing
@@ -141,12 +290,22 @@ User: "It worked. Workflow and server session status shows none after closed but
 Developer: ✅ Fix is COMPLETE (visual evidence confirms user experience is correct)
 ```
 
-**Why this is the ONLY valid success criterion:**
+**Why this is the FINAL fallback:**
 - ✅ Tests the ACTUAL user workflow (not simplified scenarios)
 - ✅ Uses REAL data (not test data)
 - ✅ Proves the user SEES the correct behavior
 - ✅ Catches UI detachment issues (data correct but UI broken)
 - ✅ Follows the 4-Eyes Principle (verifier ≠ developer)
+- ⚠️ But slower than automated verification
+- ⚠️ Requires user availability
+
+---
+
+**When NOT to skip User Perspective Verification:**
+- ❌ **NEVER** skip this for UI features
+- ❌ Even if automated tests pass
+- ❌ Even if developer testing shows success
+- ❌ Even if cognitive-visual-dimensions analysis looks good (if user reports issues)
 
 ---
 
@@ -310,29 +469,55 @@ Total: 1 day, 1 fix attempt
 
 ---
 
-## Future: Automated User Perspective Testing
+## Current: Automated User Perspective Testing with cognitive-visual-dimensions
 
-### Next Sprint Goal
+### Status: ✅ IMPLEMENTED AND WORKING
 
-**Fix cognitive-visual-analyze errors** to enable automated user perspective testing.
+**cognitive-visual-dimensions is now fixed and working** in MCP hosts like Augment and MCP Diagnosis Tool.
 
-**How it will work:**
-1. Developer performs manual step-by-step testing
-2. Takes screenshots at each step
-3. Uses cognitive-visual-analyze to verify UI state objectively
-4. Visual analysis tools provide neutral, unbiased verification
+**How it works:**
+1. Developer performs manual step-by-step testing (actual user workflow)
+2. Takes screenshots at each critical step
+3. Uses `cognitive-visual-dimensions` to verify UI state objectively
+4. Visual analysis tool provides neutral, unbiased verification
+5. Developer verifies the analysis shows correct user experience
 
 **Benefits:**
-- ✅ Objectification instead of bias
-- ✅ Automated visual verification
-- ✅ Faster feedback loop
-- ✅ Still follows user perspective principles (testing real workflows)
+- ✅ **Objectification instead of bias:** Tool analyzes what's actually visible
+- ✅ **Automated visual verification:** Faster feedback loop
+- ✅ **Neutral analysis:** No developer assumptions
+- ✅ **Still follows user perspective principles:** Testing real workflows
+- ✅ **Repeatable:** Same workflow can be tested multiple times
+- ✅ **Consistent:** Tool provides consistent analysis
 
 **Why this is valid:**
-- Developer and AI agree on the test workflow beforehand
-- Visual analysis is neutral (no developer bias)
-- Tests real user scenarios (not simplified)
-- Provides visual evidence (screenshots)
+- ✅ Developer and stakeholder agree on the test workflow beforehand
+- ✅ Visual analysis is neutral (no developer bias)
+- ✅ Tests real user scenarios (not simplified)
+- ✅ Provides visual evidence (screenshots + analysis data)
+- ✅ Maintains user perspective principles with automation
+
+**Example: Close Session Bug Verification**
+```
+1. Navigate to http://localhost:3060
+2. Load mcp-config-subconfigs.json (4 servers)
+3. Take screenshot → cognitive-visual-dimensions
+   Analysis shows: 4 servers loaded, correct layout
+4. Check "Keep sessions open"
+5. Take screenshot → cognitive-visual-dimensions
+   Analysis shows: Checkbox checked, State: Open, ID visible
+6. Click "Close session" → OK
+7. Take screenshot → cognitive-visual-dimensions
+   Analysis shows: State: Closed, ID: —, Checkbox: Unchecked
+   ✅ Visual evidence confirms correct user experience
+```
+
+**Fallback Strategy:**
+If `cognitive-visual-dimensions` is unavailable or inconclusive:
+1. Use manual visual verification (developer analyzes screenshots)
+2. Follow up with user-provided visual verification (final confirmation)
+
+**This is now the PRIMARY verification strategy for UI-involved features.**
 
 ---
 
@@ -342,7 +527,9 @@ Total: 1 day, 1 fix attempt
 |----------|---------|---------------|-------------------|
 | **Automated Tests** | Internal logic, regression, CI/CD | Final UI verification | Data correctness |
 | **Manual Developer Testing** | Debugging, exploration, development | Final verification (bias) | Understanding behavior |
-| **User Perspective Verification** | **Final UI feature verification** | Internal logic testing | **Visual evidence of correct UX** |
+| **cognitive-visual-dimensions** | **PRIMARY: Final UI feature verification** | Internal logic testing | **Objective visual analysis of correct UX** |
+| **Manual Visual Verification** | Fallback when tool unavailable | Primary verification (bias) | Visual evidence (requires user confirmation) |
+| **User-Provided Visual Verification** | **FINAL FALLBACK: When automated verification inconclusive** | Primary verification (slower) | **User-confirmed visual evidence of correct UX** |
 
 ---
 
@@ -351,25 +538,36 @@ Total: 1 day, 1 fix attempt
 1. **Data confirmation ≠ Visual confirmation**
    - Data can be correct while UI is broken
    - Only visual evidence proves user experience works
+   - Use `cognitive-visual-dimensions` for objective visual analysis
 
 2. **Developer scenarios ≠ Real user scenarios**
    - Developers test their comfort zones
    - Users test real workflows with real data
+   - `cognitive-visual-dimensions` provides neutral analysis of real workflows
 
-3. **4-Eyes Principle**
+3. **Objectification instead of bias**
+   - `cognitive-visual-dimensions` analyzes what's actually visible
+   - No developer assumptions or bias
+   - Neutral, repeatable, consistent verification
+
+4. **4-Eyes Principle (Enhanced with Automation)**
    - Fixer ≠ Verifier
-   - User perspective is the final judge
+   - `cognitive-visual-dimensions` acts as neutral verifier
+   - User perspective is the final fallback judge
 
-4. **User Perspective Verification is NOT optional**
+5. **User Perspective Verification is NOT optional**
    - ALWAYS required for UI-involved features
-   - NEVER skip this step
-   - This is the ONLY valid success criterion
+   - PRIMARY: Use `cognitive-visual-dimensions` for automated visual verification
+   - FALLBACK: Use manual visual verification if tool unavailable
+   - FINAL FALLBACK: Use user-provided visual verification if automated verification inconclusive
+   - NEVER skip visual verification entirely
 
-5. **Seeming slower = Actually faster**
+6. **Seeming slower = Actually faster**
    - Prevents false positives
    - Eliminates iteration loops
    - Catches real issues early
    - One-shot fixes instead of multiple attempts
+   - `cognitive-visual-dimensions` makes it even faster (automated + objective)
 
 ---
 
@@ -380,12 +578,19 @@ Total: 1 day, 1 fix attempt
 - Use automated tests for what they're good at (logic, regression, CI/CD)
 - Use manual developer testing for debugging and exploration
 - **ALWAYS use user perspective verification for final UI feature validation**
+  - **PRIMARY:** `cognitive-visual-dimensions` for automated, objective visual verification
+  - **FALLBACK:** Manual visual verification if tool unavailable
+  - **FINAL FALLBACK:** User-provided visual verification if automated verification inconclusive
 
 **The productivity boost comes from:**
 - Catching real issues early (not after deployment)
 - Eliminating false positives (tests pass but users see bugs)
 - One-shot fixes (no iteration loops)
 - Building features that actually work for users (not just in theory)
+- **Automated visual verification with `cognitive-visual-dimensions`:**
+  - Faster feedback loop (no waiting for user availability)
+  - Objective analysis (no developer bias)
+  - Repeatable and consistent
+  - Still maintains user perspective principles
 
-**Remember:** You work for a correct user experience. User perspective verification is the only way to prove you've achieved it.
-
+**Remember:** You work for a correct user experience. User perspective verification is the only way to prove you've achieved it. With `cognitive-visual-dimensions`, you can now achieve this faster, more objectively, and more consistently than ever before.

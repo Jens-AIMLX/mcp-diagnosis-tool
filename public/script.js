@@ -49,6 +49,7 @@
   const serverFoldoutToggle = document.getElementById('server-foldout-toggle');
   const serverPortEl = document.getElementById('server-port');
   const serverPidEl = document.getElementById('server-pid');
+  const serverStartTimeEl = document.getElementById('server-start-time');
   const serverNextRotationEl = document.getElementById("server-next-rotation");
   const serverLogStateEl = document.getElementById('server-log-state');
   const serverOfflineNote = document.getElementById('server-offline-note');
@@ -207,6 +208,7 @@
     if (offline) {
       serverPortEl.textContent = '-';
       serverPidEl.textContent = '-';
+      if (serverStartTimeEl) serverStartTimeEl.textContent = '-';
       serverLogStateEl.textContent = 'offline';
       serverLogStateEl.className = 'badge';
       serverOfflineNote.classList.remove('hidden');
@@ -220,6 +222,10 @@
     serverOfflineNote.classList.add('hidden');
     serverPortEl.textContent = String(info.port ?? '');
     serverPidEl.textContent = String(info.pid ?? '');
+    if (serverStartTimeEl) {
+      const startTs = info.startTime || null;
+      serverStartTimeEl.textContent = startTs ? new Date(startTs).toLocaleString() : '—';
+    }
     if (serverNextRotationEl) {
       const ts = info.nextRotationTs || null;
       serverNextRotationEl.textContent = ts ? new Date(ts).toLocaleString() : '—';
@@ -282,6 +288,35 @@
   if (btnRestart) {
     btnRestart.addEventListener('click', async () => {
       try {
+        // Clear all frontend session state BEFORE restarting
+        console.log('[DEBUG] Restart: Clearing frontend session state');
+
+        // Clear workflow session
+        workflowSession = null;
+
+        // Uncheck "Keep sessions open" checkbox
+        if (workflowKeepSessionsOpenCheckbox) {
+          isClosingSessionProgrammatically = true; // Prevent checkbox change event
+          workflowKeepSessionsOpenCheckbox.checked = false;
+        }
+
+        // Clear all server sessions
+        servers.forEach(entry => {
+          entry.activeSessionId = null;
+          entry.sessionReused = false;
+          entry.isWorkflowSession = false;
+        });
+
+        // Update UI to show sessions as closed
+        updateWorkflowPanel();
+        renderServers();
+
+        // Reset flag
+        isClosingSessionProgrammatically = false;
+
+        console.log('[DEBUG] Restart: Frontend session state cleared, calling backend restart');
+
+        // Now call the backend restart endpoint
         const res = await fetch('/api/server/restart', { method: 'POST' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data.ok === false) {
@@ -1835,28 +1870,51 @@
 
   async function saveArtifactsViaDialog(artifacts) {
     const suggested = artifacts.baseName || 'mcp_session';
-    if (window.showDirectoryPicker) {
-      const dirHandle = await window.showDirectoryPicker();
-      const name = window.prompt('Enter base filename for export (no extension)', suggested) || suggested;
-      await writeFile(dirHandle, `${name}.yaml`, artifacts.yaml);
-      await writeFile(dirHandle, `${name}.js`, artifacts.js);
-      await writeFile(dirHandle, `${name}.py`, artifacts.py);
-      alert('Exported session files to chosen folder.');
-      return;
+
+    // Use showSaveFilePicker for single-dialog experience
+    if (window.showSaveFilePicker) {
+      try {
+        // Show save dialog for the YAML file (primary file)
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName: `${suggested}.yaml`,
+          types: [{
+            description: 'MCP Workflow Files',
+            accept: { 'text/yaml': ['.yaml'] }
+          }]
+        });
+
+        // Save the YAML file to user-chosen location
+        const writable = await fileHandle.createWritable();
+        await writable.write(artifacts.yaml);
+        await writable.close();
+
+        // Extract base filename from the saved file
+        const savedName = fileHandle.name.replace(/\.yaml$/, '');
+
+        // Save companion files (.js and .py) to default downloads folder
+        // This avoids multiple dialogs while keeping all files together
+        downloadTextFile(`${savedName}.js`, artifacts.js, 'application/javascript;charset=utf-8');
+        downloadTextFile(`${savedName}.py`, artifacts.py, 'text/x-python;charset=utf-8');
+
+        // Silent success - no alert needed
+        return;
+      } catch (err) {
+        // User cancelled or error occurred
+        if (err.name !== 'AbortError') {
+          throw err; // Re-throw non-cancellation errors
+        }
+        return; // User cancelled - silent exit
+      }
     }
-    // Fallback to downloads
+
+    // Fallback to downloads (no save picker available)
     downloadTextFile(`${suggested}.yaml`, artifacts.yaml, 'text/yaml;charset=utf-8');
     downloadTextFile(`${suggested}.js`, artifacts.js, 'application/javascript;charset=utf-8');
     downloadTextFile(`${suggested}.py`, artifacts.py, 'text/x-python;charset=utf-8');
-    alert('Exported session files via downloads (directory picker not available).');
+    // Silent success for fallback too
   }
 
-  async function writeFile(dirHandle, filename, content) {
-    const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
-    const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
-  }
+
 
   async function exportSessionForEntry(entry) {
     if (!entry.callHistory || entry.callHistory.length === 0) {

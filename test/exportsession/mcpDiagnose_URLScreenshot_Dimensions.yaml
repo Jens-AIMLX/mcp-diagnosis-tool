@@ -1,0 +1,63 @@
+version: 1
+exported_at: '2025-10-25T15:15:42.901Z'
+servers:
+  -
+    name: 'cognitive-visual-analytics'
+    spec: {}
+  -
+    name: 'playwright'
+    spec: {}
+steps:
+  -
+    action: 'call cognitive-visual-analytics tool cognitive_visual_dimensions'
+    server: 'cognitive-visual-analytics'
+    tool: 'cognitive_visual_dimensions'
+    args: {}
+    keep_session_open: true
+    started_at: '2025-10-25T15:10:26.369Z'
+    finished_at: '2025-10-25T15:10:26.390Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_take_screenshot type=''jpeg'''
+    server: 'playwright'
+    tool: 'browser_take_screenshot'
+    args:
+      type: 'jpeg'
+    keep_session_open: true
+    started_at: '2025-10-25T15:12:05.363Z'
+    finished_at: '2025-10-25T15:12:06.623Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_navigate url=''http://localhost:3060/'''
+    server: 'playwright'
+    tool: 'browser_navigate'
+    args:
+      url: 'http://localhost:3060/'
+    keep_session_open: true
+    started_at: '2025-10-25T15:13:54.333Z'
+    finished_at: '2025-10-25T15:13:54.513Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_take_screenshot type=''jpeg'''
+    server: 'playwright'
+    tool: 'browser_take_screenshot'
+    args:
+      type: 'jpeg'
+    keep_session_open: true
+    started_at: '2025-10-25T15:14:22.308Z'
+    finished_at: '2025-10-25T15:14:22.840Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call cognitive-visual-analytics tool cognitive_visual_dimensions'
+    server: 'cognitive-visual-analytics'
+    tool: 'cognitive_visual_dimensions'
+    args: {}
+    keep_session_open: true
+    started_at: '2025-10-25T15:15:19.694Z'
+    finished_at: '2025-10-25T15:15:19.713Z'
+    ok: true
+    warmup: false

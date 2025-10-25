@@ -38,6 +38,7 @@ const {
 // Server control state for UI and log release attempts
 const SERVER_LOG_PATH = path.join(__dirname, 'server.log');
 let LOG_DETACHED = false;
+const SERVER_START_TIME = Date.now(); // Timestamp when server started
 
 const app = express();
 const PORT = process.env.PORT || 3060;
@@ -181,6 +182,7 @@ app.get('/api/server/info', (req, res) => {
   const info = {
     pid: process.pid,
     port: Number(PORT),
+    startTime: SERVER_START_TIME,
     stdoutRedirected: !process.stdout.isTTY,
     serverLogPath: SERVER_LOG_PATH,
     debugLogPath: LOG_PATH,
@@ -316,15 +318,54 @@ app.post('/api/server/shutdown', (req, res) => {
   setTimeout(() => process.exit(0), 150);
 });
 
-// Restart hint (actual restart depends on external supervisor like nodemon/systemd)
-app.post('/api/server/restart', (req, res) => {
-  const canAutoRestart = Boolean(process.env.AUTORESTART);
-  log('server_restart_requested', { canAutoRestart });
-  if (!canAutoRestart) {
-    return res.status(501).json({ ok: false, error: { kind: 'not_implemented', details: 'No supervisor detected. Use your process manager to restart.' }});
+// Restart: close all sessions, spawn start.bat in detached mode, then exit current process
+app.post('/api/server/restart', async (req, res) => {
+  const { spawn } = require('child_process');
+  const startBatPath = path.join(__dirname, 'start.bat');
+
+  try {
+    log('server_restart_requested', { from: req.ip || 'unknown', startBatPath });
+
+    // Check if start.bat exists
+    if (!fs.existsSync(startBatPath)) {
+      return res.status(500).json({
+        ok: false,
+        error: { kind: 'restart_failed', details: 'start.bat not found' }
+      });
+    }
+
+    // Close all active MCP sessions before restarting
+    try {
+      const closeResult = await closeAllSessions();
+      log('server_restart_sessions_closed', { closedCount: closeResult.closed.length });
+    } catch (sessionErr) {
+      logError('server_restart_session_close_error', sessionErr);
+      // Continue with restart even if session close fails
+    }
+
+    // Spawn start.bat in detached mode so it survives parent exit
+    const child = spawn('cmd.exe', ['/c', startBatPath], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: __dirname
+    });
+
+    // Unref so parent can exit independently
+    child.unref();
+
+    log('server_restart_spawned', { pid: child.pid });
+    res.json({ ok: true, message: 'Restarting server…' });
+
+    // Exit current process (kills all child MCP sessions)
+    // The spawned start.bat will clean ports and start fresh
+    setTimeout(() => process.exit(0), 150);
+  } catch (err) {
+    logError('server_restart_error', err);
+    res.status(500).json({
+      ok: false,
+      error: { kind: 'restart_failed', details: err.message }
+    });
   }
-  res.json({ ok: true, message: 'Restarting…' });
-  setTimeout(() => process.exit(0), 150);
 });
 
 // Expose recent in-memory debug entries for immediate inspection
