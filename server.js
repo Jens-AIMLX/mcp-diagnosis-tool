@@ -32,7 +32,10 @@ const {
   callTool,
   listSessions,
   closeSession,
-  closeAllSessions
+  closeAllSessions,
+  openSessionForSpec,
+  restartSessionForSpec,
+  renderToolReportMarkdown
 } = require('./mcpDoctor');
 
 // Server control state for UI and log release attempts
@@ -442,6 +445,46 @@ app.post('/api/tools/call', async (req, res) => {
   }
 });
 
+// API route for running a tool and saving a markdown report identical to UI
+app.post('/api/tools/report', async (req, res) => {
+  const { spec, toolName, toolArgs, keepSessionOpen, savePath, filename } = req.body || {};
+  if (!spec || typeof spec !== 'object' || !spec.mode) {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'spec with a valid mode is required' } });
+  }
+  if (!toolName || typeof toolName !== 'string') {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'toolName is required' } });
+  }
+  const startedAt = new Date();
+  try {
+    log('tools_report_request', { toolName, keepSessionOpen: !!keepSessionOpen });
+    const callResult = await callTool(spec, toolName, toolArgs ?? {}, { keepSessionOpen: !!keepSessionOpen });
+    const endedAt = new Date();
+    const timings = { startedAt: startedAt.toISOString(), endedAt: endedAt.toISOString(), durationMs: endedAt.getTime() - startedAt.getTime() };
+    const md = renderToolReportMarkdown({ spec, toolName, toolArgs: toolArgs ?? {}, result: callResult, timings });
+
+    // Determine filename and path
+    const ts = new Date().toISOString().replace(/[:.]/g, '').replace('T', '_').replace('Z', '');
+    const specLabel = (() => {
+      if (spec.mode === 'http') return (spec.url || 'http').replace(/[^a-z0-9._-]+/gi, '_');
+      const cmd = (spec.command || 'stdio').replace(/[^a-z0-9._-]+/gi, '_');
+      return cmd;
+    })();
+    const safeTool = toolName.replace(/[^a-z0-9._-]+/gi, '_');
+    const finalName = filename && typeof filename === 'string' && filename.trim()
+      ? filename.trim()
+      : `MCPDiagnois_Report_${ts}_${specLabel}_${safeTool}.md`;
+    const dir = savePath && typeof savePath === 'string' && savePath.trim() ? savePath.trim() : __dirname;
+    const outPath = path.isAbsolute(finalName) ? finalName : path.join(dir, finalName);
+
+    fs.writeFileSync(outPath, md, { encoding: 'utf8' });
+    log('tools_report_saved', { path: outPath, bytes: Buffer.byteLength(md, 'utf8') });
+    res.json({ ok: true, path: outPath, content: md, callResult });
+  } catch (err) {
+    logError('tools_report_error', err);
+    res.status(500).json({ ok: false, error: { kind: 'internal_error', details: err.message } });
+  }
+});
+
 // API route for listing active sessions
 app.get('/api/sessions', async (req, res) => {
   try {
@@ -480,6 +523,40 @@ app.post('/api/sessions/close-all', async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     logError('session_close_all_error', err);
+    res.status(500).json({ ok: false, error: { kind: 'internal_error', details: err.message } });
+  }
+});
+
+// API route for proactively opening (or reusing) a kept-alive session for a spec
+app.post('/api/sessions/open', async (req, res) => {
+  const { spec } = req.body || {};
+  if (!spec || typeof spec !== 'object' || !spec.mode) {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'spec with a valid mode is required' } });
+  }
+  try {
+    log('session_open_request', { spec: { mode: spec.mode, command: spec.command, url: spec.url, args: spec.args } });
+    const opened = await openSessionForSpec(spec);
+    log('session_open_response', { sessionId: opened.sessionId, reused: opened.sessionReused, transport: opened.transport });
+    res.json(opened);
+  } catch (err) {
+    logError('session_open_error', err);
+    res.status(500).json({ ok: false, error: { kind: 'internal_error', details: err.message } });
+  }
+});
+
+// API route for restarting a session by spec or sessionId
+app.post('/api/sessions/restart', async (req, res) => {
+  const { spec, sessionId } = req.body || {};
+  if (!sessionId && !(spec && typeof spec === 'object' && spec.mode)) {
+    return res.status(400).json({ ok: false, error: { kind: 'invalid_request', details: 'Provide sessionId or spec with a valid mode' } });
+  }
+  try {
+    log('session_restart_request', { sessionId: sessionId || null, spec: spec ? { mode: spec.mode, command: spec.command, url: spec.url, args: spec.args } : null });
+    const restarted = await restartSessionForSpec({ sessionId, spec });
+    log('session_restart_response', { sessionId: restarted.sessionId, closedCount: restarted.closedCount, transport: restarted.transport });
+    res.json(restarted);
+  } catch (err) {
+    logError('session_restart_error', err);
     res.status(500).json({ ok: false, error: { kind: 'internal_error', details: err.message } });
   }
 });

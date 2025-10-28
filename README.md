@@ -6,6 +6,7 @@ MCP Diagnosis Tool is a browser-based utility for inspecting [Model Context Prot
 
 - [Features](#features)
 - [Quick start](#quick-start)
+- [Cognitive Visual Analytics Tools](#cognitive-visual-analytics-tools)
 - [Diagnosing individual servers](#diagnosing-individual-servers)
 - [Working with MCP configurations](#working-with-mcp-configurations)
   - [Loading configs (JSON or TOML)](#loading-configs-json-or-toml)
@@ -38,6 +39,29 @@ npm start
 Open `http://localhost:3000` in your browser. To change the port, use `PORT=4000 npm start`.
 
 > **Prerequisites:** Node.js ≥ 18, npm, network access for Streamable HTTP diagnostics, and any MCP servers you want to test.
+
+## Cognitive Visual Analytics Tools
+
+This tool includes a suite of cognitive visual analytics tools for analyzing screenshots and UI elements. Each tool has specific capabilities and limitations:
+
+| Tool | Purpose | Best For |
+|------|---------|----------|
+| **cognitive_visual_dimensions** | Extract visual elements and analyze dimensions | Text detection, element positions, colors |
+| **cognitive_visual_controls** | Analyze interactive controls | Buttons, form fields, toggles |
+| **cognitive_visual_tables** | Extract and analyze table structures | Table detection and data extraction |
+| **cognitive_visual_semanticstructure** | Analyze DOM structure and semantic relationships | Page hierarchy, semantic areas, element relationships |
+| **cognitive_visual_difference** | Compare two screenshots and detect changes | Regression testing, visual comparison |
+
+**📖 For detailed capabilities and limitations of each tool, see [TOOL_CAPABILITIES.md](TOOL_CAPABILITIES.md)**
+
+### Key Distinction
+
+- **cognitive_visual_dimensions** = Visual/pixel-level analysis (text, positions, colors)
+- **cognitive_visual_semanticstructure** = Semantic/structural analysis (DOM hierarchy, relationships)
+
+**Example**: To analyze the "Zertifikate Verwaltung" panel:
+- Use `cognitive_visual_dimensions` for just the heading text
+- Use `cognitive_visual_semanticstructure` for the full panel (heading + search + table + rows)
 
 ## Diagnosing individual servers
 

@@ -569,6 +569,13 @@ If `cognitive-visual-dimensions` is unavailable or inconclusive:
    - One-shot fixes instead of multiple attempts
    - `cognitive-visual-dimensions` makes it even faster (automated + objective)
 
+7. **Hypothesis Verification Approach**
+   - When user says "idea" or "proposal", it signals uncertainty requiring verification
+   - Evidence-based scientific method: Test hypothesis → Gather evidence → Analyze results → Adjust solution
+   - Testing hypotheses leads to better solutions even when hypothesis is wrong
+   - Example: Tested "blank browser screenshot" hypothesis → Found real bug was JSON.parse() on markdown text
+   - Always verify assumptions through testing rather than assuming
+
 ---
 
 ## Conclusion

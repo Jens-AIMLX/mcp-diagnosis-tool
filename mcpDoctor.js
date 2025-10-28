@@ -72,9 +72,12 @@ async function getOrCreateSession(spec, keepAlive = false) {
   }
   
   // Create new session
-  const connection = await connectClient(spec, DEFAULT_TIMEOUT_MS);
+  const connectTimeoutMs = (typeof spec.startupTimeoutSec === 'number' && spec.startupTimeoutSec > 0)
+    ? Math.floor(spec.startupTimeoutSec * 1000)
+    : DEFAULT_TIMEOUT_MS;
+  const connection = await connectClient(spec, connectTimeoutMs);
   const sessionId = generateSessionId(spec);
-  
+
   if (keepAlive) {
     activeSessions.set(sessionId, {
       client: connection.client,
@@ -373,7 +376,10 @@ async function connectClient(spec, timeoutMs = DEFAULT_TIMEOUT_MS) {
 async function diagnose(spec) {
   let connection;
   try {
-    connection = await connectClient(spec, DEFAULT_TIMEOUT_MS);
+    const connectTimeoutMs = (typeof spec.startupTimeoutSec === 'number' && spec.startupTimeoutSec > 0)
+      ? Math.floor(spec.startupTimeoutSec * 1000)
+      : DEFAULT_TIMEOUT_MS;
+    connection = await connectClient(spec, connectTimeoutMs);
     const { client, transportName, handshake } = connection;
 
     // Once connected, list tools/prompts/resources. Some servers may omit
@@ -385,7 +391,10 @@ async function diagnose(spec) {
     let capabilities = null;
     let instructions = null;
     try {
-      const toolsList = await withTimeout(client.listTools(), DEFAULT_TIMEOUT_MS, 'tools/list');
+      const toolsTimeoutMs = (typeof spec.toolTimeoutSec === 'number' && spec.toolTimeoutSec > 0)
+        ? Math.floor(spec.toolTimeoutSec * 1000)
+        : DEFAULT_TIMEOUT_MS;
+      const toolsList = await withTimeout(client.listTools(), toolsTimeoutMs, 'tools/list');
       const arr = Array.isArray(toolsList) ? toolsList : toolsList?.tools;
       if (Array.isArray(arr)) {
         tools = arr.map((t) => ({
@@ -689,9 +698,13 @@ async function callTool(spec, toolName, toolArgs = {}, options = {}) {
     session = await getOrCreateSession(spec, keepSessionOpen);
     shouldClose = !keepSessionOpen;
     
+    const toolTimeoutMs = (typeof spec.toolTimeoutSec === 'number' && spec.toolTimeoutSec > 0)
+      ? Math.floor(spec.toolTimeoutSec * 1000)
+      : DEFAULT_TIMEOUT_MS;
+
     const result = await withTimeout(
       session.client.callTool({ name: toolName, arguments: toolArgs }),
-      DEFAULT_TIMEOUT_MS,
+      toolTimeoutMs,
       `tools/call (${toolName})`
     );
     
@@ -768,7 +781,11 @@ module.exports = {
   // Session management
   listSessions,
   closeSession,
-  closeAllSessions
+  closeAllSessions,
+  // New helpers for API parity
+  openSessionForSpec,
+  restartSessionForSpec,
+  renderToolReportMarkdown
 };
 
 // ---------- normalisation helpers ----------
@@ -948,6 +965,13 @@ function buildSpecFromEntry(entry) {
     command: entry.command,
     args: Array.isArray(entry.args) ? [...entry.args] : []
   };
+  // propagate per-server timeouts down to the runtime spec (only when defined)
+  if (typeof entry.startupTimeoutSec === 'number') {
+    spec.startupTimeoutSec = entry.startupTimeoutSec;
+  }
+  if (typeof entry.toolTimeoutSec === 'number') {
+    spec.toolTimeoutSec = entry.toolTimeoutSec;
+  }
   if (entry.env) {
     spec.env = { ...entry.env };
   }
@@ -1184,4 +1208,118 @@ function mergeNormalizedConfig(baseConfig, additionConfig) {
     topLevel: mergedTopLevel,
     servers: mergedServers
   };
+}
+
+// ---------- API parity helpers ----------
+
+/**
+ * Proactively open (or reuse) a session for the given spec and keep it alive.
+ * Mirrors frontend keep-session-open behavior.
+ * @param {object} spec
+ * @returns {Promise<{ok: boolean, sessionId: string, transport: string, handshake: object, sessionReused: boolean, createdAt: string}>}
+ */
+async function openSessionForSpec(spec) {
+  const session = await getOrCreateSession(spec, true);
+  return {
+    ok: true,
+    sessionId: session.sessionId,
+    transport: session.transportName,
+    handshake: session.handshake,
+    sessionReused: !session.isNew,
+    createdAt: session.createdAt
+  };
+}
+
+/**
+ * Restart a session either by explicit sessionId or by spec match.
+ * Closes existing match(es) then opens a fresh kept-alive session.
+ * @param {{sessionId?: string, spec?: object}} input
+ * @returns {Promise<{ok: boolean, closedCount: number, sessionId: string, transport: string, handshake: object}>}
+ */
+async function restartSessionForSpec(input = {}) {
+  let closedCount = 0;
+  if (input.sessionId && typeof input.sessionId === 'string') {
+    const r = await closeSession(input.sessionId);
+    closedCount += r.ok ? 1 : 0;
+  } else if (input.spec && typeof input.spec === 'object') {
+    const toClose = [];
+    for (const [sid, session] of activeSessions.entries()) {
+      if (specsMatch(input.spec, session.spec)) toClose.push(sid);
+    }
+    for (const sid of toClose) {
+      const r = await closeSession(sid);
+      closedCount += r.ok ? 1 : 0;
+    }
+  }
+  const fresh = await getOrCreateSession(input.spec, true);
+  return {
+    ok: true,
+    closedCount,
+    sessionId: fresh.sessionId,
+    transport: fresh.transportName,
+    handshake: fresh.handshake,
+  };
+}
+
+/**
+ * Create a markdown report for a tool call consistent with UI reports.
+ * @param {{spec: object, toolName: string, toolArgs: object, result: object, timings?: { startedAt?: string, endedAt?: string, durationMs?: number }}} params
+ * @returns {string}
+ */
+function renderToolReportMarkdown({ spec, toolName, toolArgs, result, timings = {} }) {
+  const startedAt = timings.startedAt || new Date().toISOString();
+  const endedAt = timings.endedAt || new Date().toISOString();
+  const durationMs = typeof timings.durationMs === 'number' ? timings.durationMs : undefined;
+
+  const specDisplay = spec?.mode === 'http'
+    ? { mode: 'http', url: spec.url }
+    : { mode: 'stdio', command: spec.command, args: spec.args };
+
+  const sections = [];
+  sections.push(`# MCP Diagnosis Tool Report`);
+  sections.push('');
+  sections.push(`- Tool: ${toolName}`);
+  sections.push(`- Transport: ${result?.transport ?? 'n/a'}`);
+  if (result?.sessionId) sections.push(`- Session: ${result.sessionId} (reused: ${!!result.sessionReused})`);
+  sections.push(`- Started: ${startedAt}`);
+  sections.push(`- Ended: ${endedAt}`);
+  if (durationMs !== undefined) sections.push(`- Duration: ${durationMs} ms`);
+  sections.push('');
+
+  sections.push(`## Handshake`);
+  sections.push('');
+  sections.push('```json');
+  sections.push(JSON.stringify(result?.handshake ?? null, null, 2));
+  sections.push('```');
+  sections.push('');
+
+  sections.push(`## Server Spec`);
+  sections.push('');
+  sections.push('```json');
+  sections.push(JSON.stringify(specDisplay, null, 2));
+  sections.push('```');
+  sections.push('');
+
+  sections.push(`## Tool Arguments`);
+  sections.push('');
+  sections.push('```json');
+  sections.push(JSON.stringify(toolArgs ?? {}, null, 2));
+  sections.push('```');
+  sections.push('');
+
+  if (result?.ok) {
+    sections.push(`## Output`);
+    sections.push('');
+    sections.push('```json');
+    sections.push(JSON.stringify(result.output ?? null, null, 2));
+    sections.push('```');
+  } else {
+    sections.push(`## Error`);
+    sections.push('');
+    sections.push('```json');
+    sections.push(JSON.stringify(result?.error ?? null, null, 2));
+    sections.push('```');
+  }
+
+  return sections.join('\n');
 }

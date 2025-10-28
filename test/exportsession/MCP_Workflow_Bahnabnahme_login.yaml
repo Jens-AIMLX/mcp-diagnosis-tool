@@ -1,0 +1,92 @@
+version: 1
+exported_at: '2025-10-26T20:53:34.732Z'
+servers:
+  -
+    name: 'playwright'
+    spec: {}
+steps:
+  -
+    action: 'call playwright tool browser_navigate url=''http://localhost:3002/zertifikat'''
+    server: 'playwright'
+    tool: 'browser_navigate'
+    args:
+      url: 'http://localhost:3002/zertifikat'
+    keep_session_open: true
+    started_at: '2025-10-26T20:48:12.028Z'
+    finished_at: '2025-10-26T20:48:14.262Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_snapshot'
+    server: 'playwright'
+    tool: 'browser_snapshot'
+    args: {}
+    keep_session_open: true
+    started_at: '2025-10-26T20:48:39.425Z'
+    finished_at: '2025-10-26T20:48:39.444Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_type element=''Username'' ref=''e22'' text=''admin'' submit=true'
+    server: 'playwright'
+    tool: 'browser_type'
+    args:
+      element: 'Username'
+      ref: 'e22'
+      text: 'admin'
+      submit: true
+    keep_session_open: true
+    started_at: '2025-10-26T20:49:53.807Z'
+    finished_at: '2025-10-26T20:49:54.904Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_type element=''Password'' ref=''e24'' text=''admin123'' submit=true'
+    server: 'playwright'
+    tool: 'browser_type'
+    args:
+      element: 'Password'
+      ref: 'e24'
+      text: 'admin123'
+      submit: true
+    keep_session_open: true
+    started_at: '2025-10-26T20:50:22.298Z'
+    finished_at: '2025-10-26T20:50:23.354Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_click element=''anmelden'' ref=''e27'' doubleClick=false button=''left'''
+    server: 'playwright'
+    tool: 'browser_click'
+    args:
+      element: 'anmelden'
+      ref: 'e27'
+      doubleClick: false
+      button: 'left'
+    keep_session_open: true
+    started_at: '2025-10-26T20:51:28.285Z'
+    finished_at: '2025-10-26T20:51:32.586Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_snapshot'
+    server: 'playwright'
+    tool: 'browser_snapshot'
+    args: {}
+    keep_session_open: true
+    started_at: '2025-10-26T20:52:33.363Z'
+    finished_at: '2025-10-26T20:52:34.633Z'
+    ok: true
+    warmup: false
+  -
+    action: 'call playwright tool browser_take_screenshot type=''jpeg'' fullPage=true'
+    server: 'playwright'
+    tool: 'browser_take_screenshot'
+    args:
+      type: 'jpeg'
+      fullPage: true
+    keep_session_open: true
+    started_at: '2025-10-26T20:53:13.866Z'
+    finished_at: '2025-10-26T20:53:14.556Z'
+    ok: true
+    warmup: false

@@ -1,0 +1,123 @@
+version: "0.8.0-test-skeleton"
+name: Cognitive-Visual Toolsuite Generic Test (Cognitive Profiles)
+ref: docs/testplans/cognitive-visual-toolsuite-generic-testplan.md
+
+
+profiles:
+  mcp_config: mcpconfig/mcp-config-subconfigs_cognitive.json
+  subconfigs:
+    - mcpconfig/subconfigs/plwghtconfig_cognitive.json
+    - "mcpconfig/subconfigs/cognitive-visual-config_cognitive.json"
+
+parametersets:
+    parameterset 1: no parameters
+    parameterset 2: exact imagefile playwright took 
+    parameterset 3: sub area of image : "Zertifikate Verwaltung"
+    parameterset 4: different url : localhost:3060
+    parameterset 5: exact imagefile playwright took + .json snapshot output
+    parameterset 6: exact imagefile playwright took + .json snapshot output + sub area of image : "Zertifikate Verwaltung"
+    parameterset diff : 
+        baselineimage: C:\Users\jenss\OneDrive - Singularyt UG\Code\Test\.evidence\diffbase\cognitive\diffbase_zertifikate.jpg
+        currentimage: uses latest
+
+test runs  (one tool and parameterset per test run):
+    - cognitive_visual_dimensions: {parameterset1}
+    - cognitive_visual_dimensions: {parameterset2}
+    - cognitive_visual_dimensions: {parameterset3}
+    - cognitive_visual_dimensions: {parameterset4}
+    - cognitive_visual_controls: {parameterset1}
+    - cognitive_visual_controls: {parameterset2}
+    - cognitive_visual_controls: {parameterset3}
+    - cognitive_visual_controls: {parameterset4}
+    - cognitive_visual_tables: {parameterset1}
+    - cognitive_visual_tables: {parameterset2}
+    - cognitive_visual_tables: {parameterset3}
+    - cognitive_visual_tables: {parameterset4}
+    - cognitive_visual_semanticstructure: {parameterset5}'
+    - cognitive_visual_semanticstructure: {parameterset6}
+    - cognitive_visual_difference: {parameterset diff}
+
+concrete workflow per testrun. 
+  - start status update : what is the next test run about ? how is it tested ?
+  - continue without stop
+
+  preparation (do at least after every code change or when testing new tool)
+    - navigate: "http://localhost:3060"
+    - unfold_app_server_controls: true
+    - restart_server: true
+    - wait_seconds: 15
+    - verify: [server_start_time_changed, sessions_closed]
+    - load_config: mcpconfig/mcp-config-subconfigs_cognitive.json
+    - verify_config_loaded: true
+    - keep_sessions_open: true
+    - verify_sessions_active: true
+
+- status update : any problems, questions, issues after preparation ? if not, what will you test now ?
+- continue without stop only in case no issues
+
+playwright part (between test preparation and cognitive visual tool):
+    - expand mcp server playwright if not expanded
+    - execute with mcp diagnosis playwright tools:
+      - browser_navigate: "http://localhost:3002"
+      - browser_type e22 "admin"
+      - browser_type e24 "admin123"
+      - browser_click e27 "anmelden"
+      - wait 5 s
+      - browser_navigate: "http://localhost:3002/zertifikat"
+  for 1-image-tools: (cognitive_visual_dimensions, cognitive_visual_controls, cognitive_visual_tables)
+    - browser_screenshot: jpeg, name consistent with test task
+  for cognitive_visual_semanticstructure:
+    - browser_screenshot iamgefile
+    - browser_snapshot, save output to C:\Users\jenss\OneDrive - Singularyt UG\Code\Test\.evidence\snapshots\snapshot_[url]_[timestamp].json  
+  for cognitive.visual.difference:
+        browser_screenshot imagefile C:\Users\jenss\OneDrive - Singularyt UG\Code\Test\.evidence\diffbase\cognitive\diffbase_zertifikate.jpg
+        browser_screenshot imagefile C:\Users\jenss\OneDrive - Singularyt UG\Code\Test\.evidence\screenshots\cognitive\diffcurrent_zertifikate.jpg
+
+- status update : any problems, questions, issues after playwright ? 
+  if not, what image material is prepared now ?
+  what tool+parameterset to test next ?
+- continue without stop only in case no issues
+
+cognitive-visual-analysis part:
+  - expand mcp server cognitive-visual-analytics if not expanded
+  - choose the right tool by clicking it
+  - in opened popup check if correct parameters, correct version you counted up after implementation
+  - if both correct, fill in parameters as needed
+  - click "run tool"
+  - retriev result with snapshot
+  - check the result if as expected
+
+
+- testrun result summary
+tool / parameterset
+Layer	Implemented	Unit Tested	Snapshot Confirmed	Integration Tested	User Verified
+Code completeness	🟢 100%	N/A	N/A	N/A	N/A
+Code sanity	🟢 100%	N/A	N/A	N/A	N/A
+Parameter support	🟡 75%	N/A	N/A	N/A	N/A
+Response Validation	🔴 0%	🔴 0%	🔴 0%	N/A	🔴 0%
+
+open issues, questions, inclarities
+overall success estimation
+proposal to continue or fix/repeat
+
+after completion of testrun with tool/parameterset : decide yourself
+  - if results as expected ->  successful , continue with next run
+  - if not -> refix, retest, start at step1
+after completion of all tesruns for 1 tool  : wait for user decision
+
+success_criteria testrun:
+  - server_and_tools_respond_without_errors
+  - parametersets_work_as_expected
+  - correct_paths_and_latest_file_selection
+  - expected_elements_controls_tables_detected
+  - difference_same_type_enforced_and_calibrated_alignment
+  - no_workspace_folder_deletion
+  - all_steps_verified_by_snapshots
+
+success_criteria test series:
+  - every toolset tested with every parameterset in a separate testrun each
+  - all success_criteria of testrun met
+  - all open issues, questions, inclarities resolved
+  - overall success estimation 100%
+  - user agreed after every tool test set
+

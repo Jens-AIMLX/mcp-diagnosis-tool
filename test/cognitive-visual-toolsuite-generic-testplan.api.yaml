@@ -1,0 +1,36 @@
+version: "0.8.0-api"
+name: Cognitive-Visual Toolsuite Generic Test (API)
+ref: docs/testplans/cognitive-visual-toolsuite-generic-testplan.md
+
+profiles:
+  specs:
+    playwright:
+      mode: stdio
+      command: npx
+      args:
+        - -y
+        - @playwright/mcp@latest
+        - --config
+        - C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/plwghtconfig_cognitive.json
+    cognitive_visual_analytics:
+      mode: stdio
+      command: node
+      args:
+        - C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js
+        - --config
+        - C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/cognitive-visual-config_cognitive.json
+
+parametersets:
+  parameterset 2:
+    imagefile: C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots/cognitive/params2_zertifikate_api.jpg
+
+runs:
+  - playwright:
+      - sessions/open: {}
+      - tools/call: { tool: browser_navigate, args: { url: "http://localhost:3002/zertifikat" }, keepSessionOpen: true }
+      - tools/call: { tool: browser_wait, args: { seconds: 2 }, keepSessionOpen: true }
+      - tools/call: { tool: browser_screenshot, args: { type: jpeg, path: ${parametersets.parameterset 2.imagefile} }, keepSessionOpen: true }
+  - cognitive-visual-analytics:
+      - tools/report: { tool: cognitive_visual_dimensions, args: { imagePath: ${parametersets.parameterset 2.imagefile} }, saveAs: MCPDiagnois_Report_params2_cognitive_visual_dimensions_api.md }
+      - tools/report: { tool: cognitive_visual_controls, args: { imagePath: ${parametersets.parameterset 2.imagefile} }, saveAs: MCPDiagnois_Report_params2_cognitive_visual_controls_api.md }
+      - tools/report: { tool: cognitive_visual_tables, args: { imagePath: ${parametersets.parameterset 2.imagefile} }, saveAs: MCPDiagnois_Report_params2_cognitive_visual_tables_api.md }
