@@ -1,0 +1,19 @@
+{
+  "spec": {
+    "mode": "stdio",
+    "command": "npx",
+    "args": [
+      "-y",
+      "@playwright/mcp@latest",
+      "--output-dir",
+      "C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots/cognitive",
+      "--browser",
+      "chrome",
+      "--viewport-size",
+      "2400,1350",
+      "--isolated",
+      "--no-sandbox"
+    ]
+  }
+}
+

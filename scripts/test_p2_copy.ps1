@@ -159,12 +159,38 @@ try {
 }
 
 # ============================================================================
-# C.2.2 Dimensions Analysis - Image Mode - Explicit Path (Parameterset 2 ONLY)
+# C.1 Health Check
 # ============================================================================
-Write-Host "`n[C.2.2] Dimensions - Parameterset 2 (explicit imagePath)" -ForegroundColor Yellow
+Write-Host "`n[C.1] Health Check" -ForegroundColor Yellow
 
 try {
-  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_dimensions' -ToolArgs @{imagePath=$BASELINE_IMG} -Filename 'MCPDiagnosis_Report_dimensions_p2_only.md'
+  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_health' -Filename 'MCPDiagnosis_Report_health_api.md'
+  Write-Host "  ✓ Health check completed: $($r.path)" -ForegroundColor Green
+  $results += @{Test="C.1 Health Check"; Status="PASS"; Report=$r.path}
+} catch {
+  Write-Host "  ✗ Error: $_" -ForegroundColor Red
+  $results += @{Test="C.1 Health Check"; Status="FAIL"; Error=$_.Exception.Message}
+}
+
+
+# ============================================================================
+# C.2 Dimensions Analysis
+# ============================================================================
+Write-Host "`n[C.2] Dimensions Analysis" -ForegroundColor Yellow
+
+# C.2.1 Image Mode - Latest Screenshot
+try {
+  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_dimensions' -Filename 'MCPDiagnosis_Report_dimensions_image_latest_api.md'
+  Write-Host "  ✓ C.2.1 Image Mode (latest): $($r.path)" -ForegroundColor Green
+  $results += @{Test="C.2.1 Dimensions - Image Latest"; Status="PASS"; Report=$r.path}
+} catch {
+  Write-Host "  ✗ C.2.1 Error: $_" -ForegroundColor Red
+  $results += @{Test="C.2.1 Dimensions - Image Latest"; Status="FAIL"; Error=$_.Exception.Message}
+}
+
+# C.2.2 Image Mode - Explicit Path
+try {
+  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_dimensions' -ToolArgs @{imagePath=$BASELINE_IMG} -Filename 'MCPDiagnosis_Report_dimensions_image_explicit_api.md'
   Write-Host "  ✓ C.2.2 Image Mode (explicit): $($r.path)" -ForegroundColor Green
   $results += @{Test="C.2.2 Dimensions - Image Explicit"; Status="PASS"; Report=$r.path}
 } catch {

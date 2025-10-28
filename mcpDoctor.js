@@ -1262,7 +1262,58 @@ async function restartSessionForSpec(input = {}) {
 }
 
 /**
+ * Deep parse JSON strings that may contain nested escaped JSON.
+ * This handles cases where MCP tools return JSON with escaped newlines like "{\n  \"key\": \"value\"\n}"
+ * Only parses strings that look like JSON (start with { or [)
+ * @param {any} value - The value to parse
+ * @returns {any} - The parsed value
+ */
+function deepParseJSON(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  // If it's a string, try to parse it as JSON only if it looks like JSON
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    // Only try to parse if it starts with { or [ (looks like JSON)
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(value);
+        // Recursively parse the result in case it contains more nested JSON strings
+        return deepParseJSON(parsed);
+      } catch (_err) {
+        // Not valid JSON, return as-is
+        return value;
+      }
+    }
+    // Not JSON-like, return as-is
+    return value;
+  }
+
+  // If it's an array, recursively parse each element
+  if (Array.isArray(value)) {
+    return value.map(item => deepParseJSON(item));
+  }
+
+  // If it's an object, recursively parse each property
+  if (typeof value === 'object') {
+    const result = {};
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        result[key] = deepParseJSON(value[key]);
+      }
+    }
+    return result;
+  }
+
+  // For other types (number, boolean, etc.), return as-is
+  return value;
+}
+
+/**
  * Create a markdown report for a tool call consistent with UI reports.
+ * API calls always use formatted output (deep-parsed JSON).
  * @param {{spec: object, toolName: string, toolArgs: object, result: object, timings?: { startedAt?: string, endedAt?: string, durationMs?: number }}} params
  * @returns {string}
  */
@@ -1289,21 +1340,21 @@ function renderToolReportMarkdown({ spec, toolName, toolArgs, result, timings = 
   sections.push(`## Handshake`);
   sections.push('');
   sections.push('```json');
-  sections.push(JSON.stringify(result?.handshake ?? null, null, 2));
+  sections.push(JSON.stringify(deepParseJSON(result?.handshake ?? null), null, 2));
   sections.push('```');
   sections.push('');
 
   sections.push(`## Server Spec`);
   sections.push('');
   sections.push('```json');
-  sections.push(JSON.stringify(specDisplay, null, 2));
+  sections.push(JSON.stringify(deepParseJSON(specDisplay), null, 2));
   sections.push('```');
   sections.push('');
 
   sections.push(`## Tool Arguments`);
   sections.push('');
   sections.push('```json');
-  sections.push(JSON.stringify(toolArgs ?? {}, null, 2));
+  sections.push(JSON.stringify(deepParseJSON(toolArgs ?? {}), null, 2));
   sections.push('```');
   sections.push('');
 
@@ -1311,13 +1362,13 @@ function renderToolReportMarkdown({ spec, toolName, toolArgs, result, timings = 
     sections.push(`## Output`);
     sections.push('');
     sections.push('```json');
-    sections.push(JSON.stringify(result.output ?? null, null, 2));
+    sections.push(JSON.stringify(deepParseJSON(result.output ?? null), null, 2));
     sections.push('```');
   } else {
     sections.push(`## Error`);
     sections.push('');
     sections.push('```json');
-    sections.push(JSON.stringify(result?.error ?? null, null, 2));
+    sections.push(JSON.stringify(deepParseJSON(result?.error ?? null), null, 2));
     sections.push('```');
   }
 

@@ -181,6 +181,17 @@
         <div id="tool-modal-body" class="modal-body"></div>
         <div class="modal-actions">
           <button type="button" id="tool-modal-submit">Run Tool</button>
+          <div style="display: inline-flex; align-items: center; gap: 8px; margin-left: 12px;">
+            <label style="font-size: 0.9em; color: #718096;">Report format:</label>
+            <label style="font-size: 0.9em; cursor: pointer;">
+              <input type="radio" name="report-format" value="formatted" checked style="margin-right: 4px;">
+              Formatted
+            </label>
+            <label style="font-size: 0.9em; cursor: pointer;">
+              <input type="radio" name="report-format" value="raw" style="margin-right: 4px;">
+              Raw
+            </label>
+          </div>
           <button type="button" id="tool-modal-report" class="secondary" disabled>Download Report</button>
         </div>
       </div>

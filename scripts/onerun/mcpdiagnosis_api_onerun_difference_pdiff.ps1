@@ -1,0 +1,229 @@
+# Cognitive-Visual Toolsuite Generic Test (API)
+# Complete API test suite covering all test scenarios from cognitive-visual-toolsuite-generic-testplan.md
+# Ref: docs/testplans/cognitive-visual-toolsuite-generic-testplan.api.yaml
+
+$ErrorActionPreference = 'Stop'
+
+# Configuration
+$API_BASE = 'http://localhost:3060/api'
+$TARGET_URL = 'http://localhost:3002/zertifikat'
+$SCREENSHOT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots/cognitive'
+$DIFFBASE_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/diffbase'
+$REPORT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/reports/apitest'
+
+# Generate timestamp for this test run
+$TIMESTAMP = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
+$CURRENT_IMG_NAME = "diffcurrent_zertifikate_$TIMESTAMP.jpg"
+$CURRENT_IMG = "$SCREENSHOT_DIR/$CURRENT_IMG_NAME"
+$BASELINE_IMG = "$DIFFBASE_DIR/diffbase_zertifikate.jpg"
+$REPORT_NAME = "MCPDiagnosis_Report_difference_pdiff_$TIMESTAMP.md"
+
+# Explicit specs (from one-config cognitive)
+$PW = @{
+  mode='stdio'
+  command='npx'
+  args=@(
+    '-y','@playwright/mcp@latest',
+    '--output-dir',$SCREENSHOT_DIR,
+    '--browser','chrome',
+    '--viewport-size','2400,1350',
+    '--isolated','--no-sandbox'
+  )
+}
+
+$CVA = @{
+  mode='stdio'
+  command='node'
+  args=@('C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js')
+  env=@{
+    NODE_ENV = 'production'
+    SCREENSHOT_PATH = '#PLAYWRIGHTPATH#'
+    CALIBRATION_PATH = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/calibrate'
+    DIFFERENCE_PATH = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/diffbase'
+    VISUAL_DIFF_DEFAULT_OCR = 'both'
+    VISUAL_DIFF_DEFAULT_COLOR = 'elements'
+    VISUAL_DIFF_DEFAULT_DIMENSIONS = 'both'
+    VISUAL_DIFF_DEFAULT_ELEMENTS = 'both'
+    VISUAL_DIFF_DEFAULT_AREA_WEIGHT = '0'
+    VISUAL_DIFF_DEFAULT_PRECALIBRATION = 'ON'
+    REPORT_PATH = $REPORT_DIR
+    VISUAL_DIFF_PROVIDE_REPORT = 'ON'
+    ARCHIVE_PATH = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/.archive'
+    AUTO_SCREENSHOT = 'OFF'
+    SCREENSHOTFOLDERS_PER_WORKSPACE = 'OFF'
+    AUTO_GRAB = 'OFF'
+    URLGRABFOLDERS_PER_WORKSPACE = 'OFF'
+    PLAYWRIGHT_CONFIG_JSON = "{`"outputDir`": `"$SCREENSHOT_DIR`", `"browser`": {`"browserName`": `"chromium`", `"isolated`": true, `"launchOptions`": {`"headless`": false}, `"contextOptions`": {`"viewport`": {`"width`": 2400, `"height`": 1350}}}}"
+  }
+  toolTimeoutSec=120
+}
+
+# Ensure directories exist
+New-Item -ItemType Directory -Force $SCREENSHOT_DIR | Out-Null
+New-Item -ItemType Directory -Force $DIFFBASE_DIR | Out-Null
+New-Item -ItemType Directory -Force $REPORT_DIR | Out-Null
+
+# Helper function to call tools
+function Invoke-Tool {
+  param(
+    [hashtable]$Spec,
+    [string]$ToolName,
+    [hashtable]$ToolArgs = @{},
+    [bool]$KeepSessionOpen = $true
+  )
+  $body = @{
+    spec = $Spec
+    toolName = $ToolName
+    toolArgs = $ToolArgs
+    keepSessionOpen = $KeepSessionOpen
+  } | ConvertTo-Json -Depth 10
+
+  Invoke-RestMethod "$API_BASE/tools/call" -Method Post -Body $body -ContentType 'application/json'
+}
+
+# Helper function to generate reports
+function Invoke-ToolReport {
+  param(
+    [hashtable]$Spec,
+    [string]$ToolName,
+    [hashtable]$ToolArgs = @{},
+    [string]$Filename,
+    [bool]$KeepSessionOpen = $true
+  )
+  $body = @{
+    spec = $Spec
+    toolName = $ToolName
+    toolArgs = $ToolArgs
+    keepSessionOpen = $KeepSessionOpen
+    savePath = $REPORT_DIR
+    filename = $Filename
+  } | ConvertTo-Json -Depth 10
+
+  Invoke-RestMethod "$API_BASE/tools/report" -Method Post -Body $body -ContentType 'application/json'
+}
+
+Write-Host "`n========================================" -ForegroundColor Cyan
+Write-Host "Test: cognitive_visual_difference - Parameterset diff" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+# Track results
+$results = @()
+
+# ============================================================================
+# B. Playwright Current Screenshot Capture (WITH LOGIN)
+# ============================================================================
+Write-Host "[B] Playwright Current Screenshot Capture (with login)" -ForegroundColor Yellow
+
+try {
+  # Open session
+  $body = @{spec=$PW} | ConvertTo-Json -Depth 10
+  Invoke-RestMethod "$API_BASE/sessions/open" -Method Post -Body $body -ContentType 'application/json' | Out-Null
+
+  # Navigate to login page
+  Invoke-Tool -Spec $PW -ToolName 'browser_navigate' -ToolArgs @{url='http://localhost:3002'} | Out-Null
+  Write-Host "  → Navigated to login page" -ForegroundColor Gray
+
+  # Get page snapshot to find element refs
+  Invoke-Tool -Spec $PW -ToolName 'browser_snapshot' -ToolArgs @{} | Out-Null
+  Write-Host "  → Page snapshot captured" -ForegroundColor Gray
+
+  # Type username
+  Invoke-Tool -Spec $PW -ToolName 'browser_type' -ToolArgs @{element='username field'; ref='e22'; text='admin'} | Out-Null
+  Write-Host "  → Typed username: admin" -ForegroundColor Gray
+
+  # Type password
+  Invoke-Tool -Spec $PW -ToolName 'browser_type' -ToolArgs @{element='password field'; ref='e24'; text='admin123'} | Out-Null
+  Write-Host "  → Typed password: ********" -ForegroundColor Gray
+
+  # Click login button
+  Invoke-Tool -Spec $PW -ToolName 'browser_click' -ToolArgs @{element='login button'; ref='e27'} | Out-Null
+  Write-Host "  → Clicked login button" -ForegroundColor Gray
+
+  # Wait for login to complete
+  Invoke-Tool -Spec $PW -ToolName 'browser_wait_for' -ToolArgs @{time=5} | Out-Null
+  Write-Host "  → Waited 5 seconds for login" -ForegroundColor Gray
+
+  # Navigate to target page
+  Invoke-Tool -Spec $PW -ToolName 'browser_navigate' -ToolArgs @{url=$TARGET_URL} | Out-Null
+  Write-Host "  → Navigated to: $TARGET_URL" -ForegroundColor Gray
+
+  # Wait for page to stabilize
+  Invoke-Tool -Spec $PW -ToolName 'browser_wait_for' -ToolArgs @{time=2} | Out-Null
+
+  # Screenshot with timestamped filename
+  Invoke-Tool -Spec $PW -ToolName 'browser_take_screenshot' -ToolArgs @{type='jpeg'; filename=$CURRENT_IMG_NAME} | Out-Null
+
+  if (Test-Path $CURRENT_IMG) {
+    Write-Host "  ✓ Current screenshot captured (after login): $CURRENT_IMG" -ForegroundColor Green
+    $results += @{Test="B. Current Screenshot Capture (with login)"; Status="PASS"}
+  } else {
+    Write-Host "  ✗ Current screenshot not found" -ForegroundColor Red
+    $results += @{Test="B. Current Screenshot Capture (with login)"; Status="FAIL"}
+  }
+} catch {
+  Write-Host "  ✗ Error: $_" -ForegroundColor Red
+  $results += @{Test="B. Current Screenshot Capture (with login)"; Status="FAIL"; Error=$_.Exception.Message}
+}
+
+# ============================================================================
+# C.6.1 Difference Analysis - Baseline vs Current (Parameterset diff)
+# ============================================================================
+Write-Host "`n[C.6.1] Difference - Parameterset diff (baselineimage + currentimage)" -ForegroundColor Yellow
+
+try {
+  if (-not (Test-Path $BASELINE_IMG)) {
+    Write-Host "  ✗ Baseline image not found: $BASELINE_IMG" -ForegroundColor Red
+    $results += @{Test="C.6.1 Difference - Baseline vs Current"; Status="FAIL"; Error="Baseline image not found"}
+  } else {
+    $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_difference' -ToolArgs @{baselineimage=$BASELINE_IMG; currentimage=$CURRENT_IMG} -Filename $REPORT_NAME
+    Write-Host "  ✓ C.6.1 Difference Analysis: $($r.path)" -ForegroundColor Green
+    $results += @{Test="C.6.1 Difference - Baseline vs Current"; Status="PASS"; Report=$r.path}
+  }
+} catch {
+  Write-Host "  ✗ C.6.1 Error: $_" -ForegroundColor Red
+  $results += @{Test="C.6.1 Difference - Baseline vs Current"; Status="FAIL"; Error=$_.Exception.Message}
+}
+
+
+
+# ============================================================================
+# Summary
+# ============================================================================
+Write-Host "`n========================================" -ForegroundColor Cyan
+Write-Host "Test Summary" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+$passed = ($results | Where-Object { $_.Status -eq "PASS" }).Count
+$failed = ($results | Where-Object { $_.Status -eq "FAIL" }).Count
+$total = $results.Count
+
+Write-Host "Total Tests: $total" -ForegroundColor White
+Write-Host "Passed: $passed" -ForegroundColor Green
+Write-Host "Failed: $failed" -ForegroundColor $(if ($failed -eq 0) { "Green" } else { "Red" })
+
+if ($failed -gt 0) {
+  Write-Host "`nFailed Tests:" -ForegroundColor Red
+  $results | Where-Object { $_.Status -eq "FAIL" } | ForEach-Object {
+    Write-Host "  - $($_.Test)" -ForegroundColor Red
+    if ($_.Error) {
+      Write-Host "    Error: $($_.Error)" -ForegroundColor DarkRed
+    }
+  }
+}
+
+Write-Host "`nGenerated Reports:" -ForegroundColor Yellow
+$results | Where-Object { $_.Report } | ForEach-Object {
+  Write-Host "  - $($_.Test): $($_.Report)" -ForegroundColor Gray
+}
+
+Write-Host "`nScreenshots:" -ForegroundColor Yellow
+Write-Host "  - Baseline: $BASELINE_IMG" -ForegroundColor Gray
+Write-Host "  - Current: $CURRENT_IMG" -ForegroundColor Gray
+
+Write-Host "`n========================================" -ForegroundColor Cyan
+Write-Host "Test Complete" -ForegroundColor Cyan
+Write-Host "========================================`n" -ForegroundColor Cyan
+
+# Exit with appropriate code
+exit $(if ($failed -eq 0) { 0 } else { 1 })
+

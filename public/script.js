@@ -601,25 +601,90 @@
     URL.revokeObjectURL(url);
   }
 
-  function formatAsCodeBlock(value, fallbackLanguage = 'json') {
+  /**
+   * Deep parse JSON strings that may contain nested escaped JSON.
+   * This handles cases where MCP tools return JSON with escaped newlines like "{\n  \"key\": \"value\"\n}"
+   * Only parses strings that look like JSON (start with { or [)
+   * @param {any} value - The value to parse
+   * @param {boolean} formatted - Whether to format the output (true) or keep it raw (false)
+   * @returns {any} - The parsed value
+   */
+  function deepParseJSON(value, formatted = true) {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    // If it's a string, try to parse it as JSON only if it looks like JSON
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      // Only try to parse if it starts with { or [ (looks like JSON)
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(value);
+          // Recursively parse the result in case it contains more nested JSON strings
+          return deepParseJSON(parsed, formatted);
+        } catch (_err) {
+          // Not valid JSON, return as-is
+          return value;
+        }
+      }
+      // Not JSON-like, return as-is
+      return value;
+    }
+
+    // If it's an array, recursively parse each element
+    if (Array.isArray(value)) {
+      return value.map(item => deepParseJSON(item, formatted));
+    }
+
+    // If it's an object, recursively parse each property
+    if (typeof value === 'object') {
+      const result = {};
+      for (const key in value) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          result[key] = deepParseJSON(value[key], formatted);
+        }
+      }
+      return result;
+    }
+
+    // For other types (number, boolean, etc.), return as-is
+    return value;
+  }
+
+  function formatAsCodeBlock(value, fallbackLanguage = 'json', formatted = true) {
     let language = fallbackLanguage;
     let text;
     if (value === undefined || value === null) {
       text = '{}';
     } else if (typeof value === 'string') {
-      try {
-        const parsed = JSON.parse(value);
-        text = JSON.stringify(parsed, null, 2);
-      } catch (_err) {
+      if (formatted) {
+        // Formatted mode: try to parse and pretty-print
+        try {
+          const parsed = deepParseJSON(value, true);
+          text = JSON.stringify(parsed, null, 2);
+        } catch (_err) {
+          language = '';
+          text = value;
+        }
+      } else {
+        // Raw mode: just show the string as-is
         language = '';
         text = value;
       }
     } else {
-        // Object or other: pretty-print as JSON
+      // Object or other
+      if (formatted) {
+        // Formatted mode: deep parse and pretty-print
+        const toFormat = deepParseJSON(value, true);
+        try { text = JSON.stringify(toFormat, null, 2); } catch (_) { text = String(value); }
+      } else {
+        // Raw mode: stringify WITHOUT deep parsing to preserve nested JSON strings with escape characters
         try { text = JSON.stringify(value, null, 2); } catch (_) { text = String(value); }
       }
-      return '```' + language + '\n' + text + '\n```';
     }
+    return '```' + language + '\n' + text + '\n```';
+  }
 
 
 	// Normalize MCP tool output for display/export: parse text content JSON if present
@@ -929,7 +994,7 @@
     `;
   }
 
-  function generateToolReport(reportData) {
+  function generateToolReport(reportData, formatted = true) {
     const {
       serverName,
       toolName,
@@ -940,9 +1005,12 @@
       durationMs,
       success,
       response,
+      rawResponse,
       error,
       handshake
     } = reportData;
+    // Use rawResponse in raw mode if available, otherwise fall back to response
+    const outputToDisplay = (!formatted && rawResponse) ? rawResponse : response;
     const lines = [];
     lines.push('# MCP Tool Call Report');
     lines.push('');
@@ -966,25 +1034,25 @@
         capabilities: handshake.capabilities ?? null,
         instructions: handshake.instructions ?? null
       };
-      lines.push(formatAsCodeBlock(summary));
+      lines.push(formatAsCodeBlock(summary, 'json', formatted));
       lines.push('');
     }
     lines.push('## Server Configuration');
-    lines.push(formatAsCodeBlock(spec));
+    lines.push(formatAsCodeBlock(spec, 'json', formatted));
     lines.push('');
     lines.push('## Tool Arguments');
-    lines.push(formatAsCodeBlock(args ?? {}));
+    lines.push(formatAsCodeBlock(args ?? {}, 'json', formatted));
     lines.push('');
     lines.push('## Output');
     if (success) {
-      lines.push(formatAsCodeBlock(response ?? {}));
+      lines.push(formatAsCodeBlock(outputToDisplay ?? {}, 'json', formatted));
     } else {
       const errorBlock = {
         kind: error?.kind ?? 'unknown',
         advice: error?.advice ?? null,
         details: error?.details ?? error ?? null
       };
-      lines.push(formatAsCodeBlock(errorBlock));
+      lines.push(formatAsCodeBlock(errorBlock, 'json', formatted));
     }
     return lines.join('\n');
   }
@@ -2276,7 +2344,20 @@
           statusHtml = '<div class="result-status error">Tool reported failure (success: false).</div>';
         }
       } catch (_) {}
-      container.innerHTML = statusHtml + `<pre>${escapeHtml(stringifyValue(payload.output ?? {}))}</pre>`;
+
+      // Determine which output to display based on the format toggle
+      const formatRadios = document.getElementsByName('report-format');
+      let useFormatted = true; // default to formatted
+      for (const radio of formatRadios) {
+        if (radio.checked) {
+          useFormatted = radio.value === 'formatted';
+          break;
+        }
+      }
+
+      // Use raw output if available and raw mode is selected, otherwise use formatted output
+      const outputToDisplay = (!useFormatted && payload.rawOutput) ? payload.rawOutput : payload.output;
+      container.innerHTML = statusHtml + `<pre>${escapeHtml(stringifyValue(outputToDisplay ?? {}))}</pre>`;
     } else {
       const error = payload.error ?? {};
       const lines = [];
@@ -2685,7 +2766,7 @@
           entry.isWorkflowSession = false;
         }
 
-        const resultPayload = { ok: true, output: normalizedOut };
+        const resultPayload = { ok: true, output: normalizedOut, rawOutput: data.output };
         setModalResult(resultPayload);
         const reportData = {
           serverName: entry.serverName || entry.displayName || 'unknown',
@@ -2697,6 +2778,7 @@
           durationMs,
           success: true,
           response: normalizedOut,
+          rawResponse: data.output, // Store raw output for raw mode
           error: null,
           handshake: handshakeInfo,
           sessionId: data.sessionId,
@@ -3091,6 +3173,24 @@
   });
 
   toolModalSubmit.addEventListener('click', submitToolModal);
+
+  // Add event listeners to format toggle radio buttons to update the display
+  const formatRadios = document.getElementsByName('report-format');
+  formatRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      // Re-render the modal result with the new format
+      if (activeToolContext && activeToolContext.entry && activeToolContext.tool) {
+        const entry = activeToolContext.entry;
+        const tool = activeToolContext.tool;
+        const testResult = entry.toolTests?.[tool.name];
+        if (testResult && testResult.status === 'ok') {
+          const resultPayload = { ok: true, output: testResult.output, rawOutput: testResult.rawOutput };
+          setModalResult(resultPayload);
+        }
+      }
+    });
+  });
+
   toolModalReport.addEventListener('click', () => {
     if (!activeToolContext) {
       alert('No tool execution to report.');
@@ -3106,12 +3206,21 @@
       alert('Run the tool before generating a report.');
       return;
     }
+    // Get the selected format from the radio buttons
+    const formatRadios = document.getElementsByName('report-format');
+    let formatted = true; // default to formatted
+    for (const radio of formatRadios) {
+      if (radio.checked) {
+        formatted = radio.value === 'formatted';
+        break;
+      }
+    }
     const finishedDate = new Date(stored.finishedAt);
     const timestamp = formatTimestampForFilename(finishedDate);
     const serverSegment = sanitizeFilenameSegment(stored.serverName || 'server');
     const toolSegment = sanitizeFilenameSegment(stored.toolName || 'tool');
     const filename = `MCPDiagnois_Report_${timestamp}_${serverSegment}_${toolSegment}.md`;
-    const content = generateToolReport(stored);
+    const content = generateToolReport(stored, formatted);
     downloadTextFile(filename, content, 'text/markdown;charset=utf-8');
   });
   toolModalClose.addEventListener('click', closeToolModal);
