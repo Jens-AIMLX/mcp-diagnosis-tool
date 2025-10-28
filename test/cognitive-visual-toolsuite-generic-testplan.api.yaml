@@ -34,3 +34,4 @@ runs:
       - tools/report: { tool: cognitive_visual_dimensions, args: { imagePath: ${parametersets.parameterset 2.imagefile} }, saveAs: MCPDiagnois_Report_params2_cognitive_visual_dimensions_api.md }
       - tools/report: { tool: cognitive_visual_controls, args: { imagePath: ${parametersets.parameterset 2.imagefile} }, saveAs: MCPDiagnois_Report_params2_cognitive_visual_controls_api.md }
       - tools/report: { tool: cognitive_visual_tables, args: { imagePath: ${parametersets.parameterset 2.imagefile} }, saveAs: MCPDiagnois_Report_params2_cognitive_visual_tables_api.md }
+
