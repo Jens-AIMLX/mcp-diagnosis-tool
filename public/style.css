@@ -934,3 +934,48 @@ section h2 {
 .badge { padding: 2px 6px; border-radius: 999px; font-size: 0.75rem; background-color: #2d3748; color: #cbd5e0; }
 .badge.ok { background-color: #22543d; color: #68d391; }
 .server-offline { font-size: 0.85rem; color: #a0aec0; margin-top: 8px; }
+
+/* Copy button for output */
+.copy-output-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 6px 12px;
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.copy-output-btn:hover {
+  background: #4a5568;
+  border-color: #718096;
+}
+
+.copy-output-btn svg {
+  flex-shrink: 0;
+}
+
+/* Scrollable output with configurable max height */
+.output-pre {
+  margin: 0;
+  padding: 12px;
+  padding-top: 40px; /* Space for copy button */
+  background-color: #1a202c;
+  border: 1px solid #2d3748;
+  border-radius: 4px;
+  overflow: auto;
+  max-height: var(--output-max-height, 600px); /* Default 600px, configurable */
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}

@@ -1,0 +1,17 @@
+{
+  "spec": {
+    "mode": "stdio",
+    "command": "node",
+    "args": ["C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js"],
+    "env": {}
+  },
+  "toolName": "cognitive_visual_dimensiondiff",
+  "toolArgs": {
+    "baselineimage": "C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots/cognitive/baseline.jpg",
+    "currentimage": "C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots/cognitive/base_current.jpg"
+  },
+  "keepSessionOpen": false,
+  "savePath": "C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/reports/apitest",
+  "filename": "MCPDiagnosis_Report_dimensiondiff_test1.md"
+}
+

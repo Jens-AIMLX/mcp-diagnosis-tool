@@ -1,4 +1,4 @@
-# Cognitive-Visual Toolsuite Generic Test (API)
+﻿# Cognitive-Visual Toolsuite Generic Test (API)
 # Complete API test suite covering all test scenarios from cognitive-visual-toolsuite-generic-testplan.md
 # Ref: docs/testplans/cognitive-visual-toolsuite-generic-testplan.api.yaml
 
@@ -217,4 +217,3 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Exit with appropriate code
 exit $(if ($failed -eq 0) { 0 } else { 1 })
-

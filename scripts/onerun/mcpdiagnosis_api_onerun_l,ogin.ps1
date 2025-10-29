@@ -12,9 +12,9 @@ $REPORT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/reports/apitest'
 
 # Generate timestamp for this test run
 $TIMESTAMP = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-$BASELINE_IMG_NAME = "tables_p1_$TIMESTAMP.jpg"
+$BASELINE_IMG_NAME = "controls_p1_$TIMESTAMP.jpg"
 $BASELINE_IMG = "$SCREENSHOT_DIR/$BASELINE_IMG_NAME"
-$REPORT_NAME = "MCPDiagnosis_Report_tables_p1_$TIMESTAMP.md"
+$REPORT_NAME = "MCPDiagnosis_Report_controls_p1_$TIMESTAMP.md"
 
 # Explicit specs (from one-config cognitive)
 $PW = @{
@@ -100,7 +100,7 @@ function Invoke-ToolReport {
 }
 
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "Test: cognitive_visual_tables - Parameterset 1" -ForegroundColor Cyan
+Write-Host "Test: cognitive_visual_controls - Parameterset 1" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Track results
@@ -163,17 +163,17 @@ try {
 }
 
 # ============================================================================
-# C.4.1 Tables Analysis - Image Mode - Latest (Parameterset 1)
+# C.3.1 Controls Analysis - Image Mode - Latest (Parameterset 1)
 # ============================================================================
-Write-Host "`n[C.4.1] Tables - Parameterset 1 (no parameters)" -ForegroundColor Yellow
+Write-Host "`n[C.0.0] Playwright Login (no parameters)" -ForegroundColor Yellow
 
 try {
-  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_tables' -Filename $REPORT_NAME
-  Write-Host "  ✓ C.4.1 Image Mode (latest): $($r.path)" -ForegroundColor Green
-  $results += @{Test="C.4.1 Tables - Latest"; Status="PASS"; Report=$r.path}
+  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_controls' -Filename $REPORT_NAME
+  Write-Host "  ✓ C.3.1 Image Mode (latest): $($r.path)" -ForegroundColor Green
+  $results += @{Test="C.3.1 Controls - Latest"; Status="PASS"; Report=$r.path}
 } catch {
-  Write-Host "  ✗ C.4.1 Error: $_" -ForegroundColor Red
-  $results += @{Test="C.4.1 Tables - Latest"; Status="FAIL"; Error=$_.Exception.Message}
+  Write-Host "  ✗ C.3.1 Error: $_" -ForegroundColor Red
+  $results += @{Test="C.3.1 Controls - Latest"; Status="FAIL"; Error=$_.Exception.Message}
 }
 
 

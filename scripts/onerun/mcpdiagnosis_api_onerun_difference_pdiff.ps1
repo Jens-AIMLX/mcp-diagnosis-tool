@@ -1,4 +1,4 @@
-# Cognitive-Visual Toolsuite Generic Test (API)
+﻿# Cognitive-Visual Toolsuite Generic Test (API)
 # Complete API test suite covering all test scenarios from cognitive-visual-toolsuite-generic-testplan.md
 # Ref: docs/testplans/cognitive-visual-toolsuite-generic-testplan.api.yaml
 
@@ -8,14 +8,12 @@ $ErrorActionPreference = 'Stop'
 $API_BASE = 'http://localhost:3060/api'
 $TARGET_URL = 'http://localhost:3002/zertifikat'
 $SCREENSHOT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots/cognitive'
-$DIFFBASE_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/diffbase'
 $REPORT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/reports/apitest'
 
 # Generate timestamp for this test run
 $TIMESTAMP = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-$CURRENT_IMG_NAME = "diffcurrent_zertifikate_$TIMESTAMP.jpg"
-$CURRENT_IMG = "$SCREENSHOT_DIR/$CURRENT_IMG_NAME"
-$BASELINE_IMG = "$DIFFBASE_DIR/diffbase_zertifikate.jpg"
+$BASELINE_IMG_NAME = "difference_pdiff_$TIMESTAMP.jpg"
+$BASELINE_IMG = "$SCREENSHOT_DIR/$BASELINE_IMG_NAME"
 $REPORT_NAME = "MCPDiagnosis_Report_difference_pdiff_$TIMESTAMP.md"
 
 # Explicit specs (from one-config cognitive)
@@ -60,7 +58,6 @@ $CVA = @{
 
 # Ensure directories exist
 New-Item -ItemType Directory -Force $SCREENSHOT_DIR | Out-Null
-New-Item -ItemType Directory -Force $DIFFBASE_DIR | Out-Null
 New-Item -ItemType Directory -Force $REPORT_DIR | Out-Null
 
 # Helper function to call tools
@@ -110,9 +107,9 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 $results = @()
 
 # ============================================================================
-# B. Playwright Current Screenshot Capture (WITH LOGIN)
+# B. Playwright Baseline Capture (WITH LOGIN)
 # ============================================================================
-Write-Host "[B] Playwright Current Screenshot Capture (with login)" -ForegroundColor Yellow
+Write-Host "[B] Playwright Baseline Capture (with login)" -ForegroundColor Yellow
 
 try {
   # Open session
@@ -151,37 +148,32 @@ try {
   Invoke-Tool -Spec $PW -ToolName 'browser_wait_for' -ToolArgs @{time=2} | Out-Null
 
   # Screenshot with timestamped filename
-  Invoke-Tool -Spec $PW -ToolName 'browser_take_screenshot' -ToolArgs @{type='jpeg'; filename=$CURRENT_IMG_NAME} | Out-Null
+  Invoke-Tool -Spec $PW -ToolName 'browser_take_screenshot' -ToolArgs @{type='jpeg'; filename=$BASELINE_IMG_NAME} | Out-Null
 
-  if (Test-Path $CURRENT_IMG) {
-    Write-Host "  ✓ Current screenshot captured (after login): $CURRENT_IMG" -ForegroundColor Green
-    $results += @{Test="B. Current Screenshot Capture (with login)"; Status="PASS"}
+  if (Test-Path $BASELINE_IMG) {
+    Write-Host "  ✓ Baseline screenshot captured (after login): $BASELINE_IMG" -ForegroundColor Green
+    $results += @{Test="B. Baseline Capture (with login)"; Status="PASS"}
   } else {
-    Write-Host "  ✗ Current screenshot not found" -ForegroundColor Red
-    $results += @{Test="B. Current Screenshot Capture (with login)"; Status="FAIL"}
+    Write-Host "  ✗ Baseline screenshot not found" -ForegroundColor Red
+    $results += @{Test="B. Baseline Capture (with login)"; Status="FAIL"}
   }
 } catch {
   Write-Host "  ✗ Error: $_" -ForegroundColor Red
-  $results += @{Test="B. Current Screenshot Capture (with login)"; Status="FAIL"; Error=$_.Exception.Message}
+  $results += @{Test="B. Baseline Capture (with login)"; Status="FAIL"; Error=$_.Exception.Message}
 }
 
 # ============================================================================
-# C.6.1 Difference Analysis - Baseline vs Current (Parameterset diff)
+# C.6.diff Difference Analysis - Baseline vs Current (Parameterset diff)
 # ============================================================================
-Write-Host "`n[C.6.1] Difference - Parameterset diff (baselineimage + currentimage)" -ForegroundColor Yellow
+Write-Host "`n[C.6.diff] Difference - Parameterset diff (baselineimage + currentimage)" -ForegroundColor Yellow
 
 try {
-  if (-not (Test-Path $BASELINE_IMG)) {
-    Write-Host "  ✗ Baseline image not found: $BASELINE_IMG" -ForegroundColor Red
-    $results += @{Test="C.6.1 Difference - Baseline vs Current"; Status="FAIL"; Error="Baseline image not found"}
-  } else {
-    $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_difference' -ToolArgs @{baselineimage=$BASELINE_IMG; currentimage=$CURRENT_IMG} -Filename $REPORT_NAME
-    Write-Host "  ✓ C.6.1 Difference Analysis: $($r.path)" -ForegroundColor Green
-    $results += @{Test="C.6.1 Difference - Baseline vs Current"; Status="PASS"; Report=$r.path}
-  }
+  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_difference' -ToolArgs @{baselineimage='C:/Users/jenss/OneDrive - Singularyt UG/Code/Test/.evidence/screenshots/cognitive/baseline.jpg'; currentimage=$BASELINE_IMG} -Filename $REPORT_NAME
+  Write-Host "  ✓ C.6.diff Baseline vs Current: $($r.path)" -ForegroundColor Green
+  $results += @{Test="C.6.diff Difference - Images"; Status="PASS"; Report=$r.path}
 } catch {
-  Write-Host "  ✗ C.6.1 Error: $_" -ForegroundColor Red
-  $results += @{Test="C.6.1 Difference - Baseline vs Current"; Status="FAIL"; Error=$_.Exception.Message}
+  Write-Host "  ✗ C.6.diff Error: $_" -ForegroundColor Red
+  $results += @{Test="C.6.diff Difference - Images"; Status="FAIL"; Error=$_.Exception.Message}
 }
 
 
@@ -218,7 +210,6 @@ $results | Where-Object { $_.Report } | ForEach-Object {
 
 Write-Host "`nScreenshots:" -ForegroundColor Yellow
 Write-Host "  - Baseline: $BASELINE_IMG" -ForegroundColor Gray
-Write-Host "  - Current: $CURRENT_IMG" -ForegroundColor Gray
 
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "Test Complete" -ForegroundColor Cyan
@@ -226,4 +217,3 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Exit with appropriate code
 exit $(if ($failed -eq 0) { 0 } else { 1 })
-

@@ -1,4 +1,4 @@
-# Cognitive-Visual Toolsuite Generic Test (API)
+﻿# Cognitive-Visual Toolsuite Generic Test (API)
 # Complete API test suite covering all test scenarios from cognitive-visual-toolsuite-generic-testplan.md
 # Ref: docs/testplans/cognitive-visual-toolsuite-generic-testplan.api.yaml
 
@@ -163,17 +163,17 @@ try {
 }
 
 # ============================================================================
-# C.3.2 Controls Analysis - Image Mode - Explicit Path (Parameterset 2)
+# C.3.2 Controls Analysis - Image Mode - Explicit (Parameterset 2)
 # ============================================================================
 Write-Host "`n[C.3.2] Controls - Parameterset 2 (explicit imagePath)" -ForegroundColor Yellow
 
 try {
   $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_controls' -ToolArgs @{imagePath=$BASELINE_IMG} -Filename $REPORT_NAME
   Write-Host "  ✓ C.3.2 Image Mode (explicit): $($r.path)" -ForegroundColor Green
-  $results += @{Test="C.3.2 Controls - Image Explicit"; Status="PASS"; Report=$r.path}
+  $results += @{Test="C.3.2 Controls - Explicit"; Status="PASS"; Report=$r.path}
 } catch {
   Write-Host "  ✗ C.3.2 Error: $_" -ForegroundColor Red
-  $results += @{Test="C.3.2 Controls - Image Explicit"; Status="FAIL"; Error=$_.Exception.Message}
+  $results += @{Test="C.3.2 Controls - Explicit"; Status="FAIL"; Error=$_.Exception.Message}
 }
 
 
@@ -217,4 +217,3 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Exit with appropriate code
 exit $(if ($failed -eq 0) { 0 } else { 1 })
-

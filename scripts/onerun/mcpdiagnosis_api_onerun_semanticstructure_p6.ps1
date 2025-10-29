@@ -1,4 +1,4 @@
-# Cognitive-Visual Toolsuite Generic Test (API)
+﻿# Cognitive-Visual Toolsuite Generic Test (API)
 # Complete API test suite covering all test scenarios from cognitive-visual-toolsuite-generic-testplan.md
 # Ref: docs/testplans/cognitive-visual-toolsuite-generic-testplan.api.yaml
 
@@ -8,15 +8,12 @@ $ErrorActionPreference = 'Stop'
 $API_BASE = 'http://localhost:3060/api'
 $TARGET_URL = 'http://localhost:3002/zertifikat'
 $SCREENSHOT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/screenshots/cognitive'
-$SNAPSHOT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/snapshots'
 $REPORT_DIR = 'C:/Users/jenss/ONEDRI~2/Code/Test/.evidence/reports/apitest'
 
 # Generate timestamp for this test run
 $TIMESTAMP = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
 $BASELINE_IMG_NAME = "semanticstructure_p6_$TIMESTAMP.jpg"
 $BASELINE_IMG = "$SCREENSHOT_DIR/$BASELINE_IMG_NAME"
-$SNAPSHOT_JSON_NAME = "snapshot_zertifikate_$TIMESTAMP.json"
-$SNAPSHOT_JSON = "$SNAPSHOT_DIR/$SNAPSHOT_JSON_NAME"
 $REPORT_NAME = "MCPDiagnosis_Report_semanticstructure_p6_$TIMESTAMP.md"
 
 # Explicit specs (from one-config cognitive)
@@ -61,7 +58,6 @@ $CVA = @{
 
 # Ensure directories exist
 New-Item -ItemType Directory -Force $SCREENSHOT_DIR | Out-Null
-New-Item -ItemType Directory -Force $SNAPSHOT_DIR | Out-Null
 New-Item -ItemType Directory -Force $REPORT_DIR | Out-Null
 
 # Helper function to call tools
@@ -154,11 +150,6 @@ try {
   # Screenshot with timestamped filename
   Invoke-Tool -Spec $PW -ToolName 'browser_take_screenshot' -ToolArgs @{type='jpeg'; filename=$BASELINE_IMG_NAME} | Out-Null
 
-  # Capture browser snapshot and save to JSON
-  $snapshotResult = Invoke-Tool -Spec $PW -ToolName 'browser_snapshot' -ToolArgs @{}
-  $snapshotResult.content | ConvertTo-Json -Depth 100 | Out-File -FilePath $SNAPSHOT_JSON -Encoding UTF8
-  Write-Host "  → Browser snapshot saved to: $SNAPSHOT_JSON" -ForegroundColor Gray
-
   if (Test-Path $BASELINE_IMG) {
     Write-Host "  ✓ Baseline screenshot captured (after login): $BASELINE_IMG" -ForegroundColor Green
     $results += @{Test="B. Baseline Capture (with login)"; Status="PASS"}
@@ -172,17 +163,17 @@ try {
 }
 
 # ============================================================================
-# C.5.2 SemanticStructure Analysis - Image + Snapshot + Area (Parameterset 6)
+# C.5.6 SemanticStructure Analysis - Image + JSON + Area (Parameterset 6)
 # ============================================================================
-Write-Host "`n[C.5.2] SemanticStructure - Parameterset 6 (imagePath + snapshotjson + area)" -ForegroundColor Yellow
+Write-Host "`n[C.5.6] SemanticStructure - Parameterset 6 (imagePath + snapshotjson + area)" -ForegroundColor Yellow
 
 try {
-  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_semanticstructure' -ToolArgs @{imagePath=$BASELINE_IMG; snapshotjson=$SNAPSHOT_JSON; area='Zertifikate Verwaltung'} -Filename $REPORT_NAME
-  Write-Host "  ✓ C.5.2 Image + Snapshot + Area: $($r.path)" -ForegroundColor Green
-  $results += @{Test="C.5.2 SemanticStructure - Image+Snapshot+Area"; Status="PASS"; Report=$r.path}
+  $r = Invoke-ToolReport -Spec $CVA -ToolName 'cognitive_visual_semanticstructure' -ToolArgs @{imagePath=$BASELINE_IMG; snapshotjson='C:/Users/jenss/OneDrive - Singularyt UG/Code/Test/.evidence/snapshots/snapshot.json'; area='Zertifikate Verwaltung'} -Filename $REPORT_NAME
+  Write-Host "  ✓ C.5.6 Image + JSON + Area: $($r.path)" -ForegroundColor Green
+  $results += @{Test="C.5.6 SemanticStructure - JSON+Area"; Status="PASS"; Report=$r.path}
 } catch {
-  Write-Host "  ✗ C.5.2 Error: $_" -ForegroundColor Red
-  $results += @{Test="C.5.2 SemanticStructure - Image+Snapshot+Area"; Status="FAIL"; Error=$_.Exception.Message}
+  Write-Host "  ✗ C.5.6 Error: $_" -ForegroundColor Red
+  $results += @{Test="C.5.6 SemanticStructure - JSON+Area"; Status="FAIL"; Error=$_.Exception.Message}
 }
 
 
@@ -219,7 +210,6 @@ $results | Where-Object { $_.Report } | ForEach-Object {
 
 Write-Host "`nScreenshots:" -ForegroundColor Yellow
 Write-Host "  - Baseline: $BASELINE_IMG" -ForegroundColor Gray
-Write-Host "  - Snapshot JSON: $SNAPSHOT_JSON" -ForegroundColor Gray
 
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "Test Complete" -ForegroundColor Cyan
@@ -227,4 +217,3 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 # Exit with appropriate code
 exit $(if ($failed -eq 0) { 0 } else { 1 })
-

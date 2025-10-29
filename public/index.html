@@ -97,6 +97,15 @@
         <input type="file" id="config-toml-input" accept=".toml,text/plain" class="hidden" />
       </section>
 
+      <section id="app-controls-section">
+        <h2>App Controls</h2>
+        <div class="form-row">
+          <label for="output-max-lines">Output Max Lines:</label>
+          <input type="number" id="output-max-lines" name="output-max-lines" value="100" min="10" max="1000" step="10" style="width: 100px;">
+          <span style="font-size: 0.85rem; color: #a0aec0; margin-left: 8px;">Lines before scrollbar appears (default: 100)</span>
+        </div>
+      </section>
+
       <section id="add-server-section">
         <h2>Add / Diagnose a Server</h2>
         <form id="diagnose-form">

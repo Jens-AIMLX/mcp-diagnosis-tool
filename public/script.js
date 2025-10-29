@@ -43,6 +43,8 @@
   const configModalMergeButton = document.getElementById('config-modal-merge');
   const configModalClose = document.getElementById('config-modal-close');
 
+  const outputMaxLinesInput = document.getElementById('output-max-lines');
+
   const servers = [];
   // --- Server control foldout elements ---
   const serverFoldout = document.getElementById('server-foldout');
@@ -1079,9 +1081,21 @@
     }
   }
 
-  function stringifyValue(value) {
+  function stringifyValue(value, formatted = true) {
     if (value === null || value === undefined) return '';
-    if (typeof value === 'string') return value;
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    // For formatted mode, check if this is a Playwright-style response with a text field
+    if (formatted && typeof value === 'object') {
+      // Check if it's the normalized output format: { text: "..." }
+      if (value.text && typeof value.text === 'string' && Object.keys(value).length === 1) {
+        // Return just the text content without JSON wrapping
+        return value.text;
+      }
+    }
+
     try {
       return JSON.stringify(value, null, 2);
     } catch (err) {
@@ -2357,7 +2371,21 @@
 
       // Use raw output if available and raw mode is selected, otherwise use formatted output
       const outputToDisplay = (!useFormatted && payload.rawOutput) ? payload.rawOutput : payload.output;
-      container.innerHTML = statusHtml + `<pre>${escapeHtml(stringifyValue(outputToDisplay ?? {}))}</pre>`;
+      const outputText = stringifyValue(outputToDisplay ?? {}, useFormatted);
+
+      // Add copy button and output with scrollable container
+      container.innerHTML = statusHtml + `
+        <div style="position: relative;">
+          <button type="button" class="copy-output-btn" onclick="copyOutputToClipboard()" title="Copy to clipboard">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10.5 1.5h-8v11h8v-11z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+              <path d="M13.5 4.5v11h-8" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            </svg>
+            Copy
+          </button>
+          <pre class="output-pre" id="modal-output-text">${escapeHtml(outputText)}</pre>
+        </div>
+      `;
     } else {
       const error = payload.error ?? {};
       const lines = [];
@@ -2376,7 +2404,7 @@
             }
           }
         } catch (_) {}
-        lines.push(`details: ${stringifyValue(error.details)}`);
+        lines.push(`details: ${stringifyValue(error.details, true)}`);
       }
       if (!lines.length) {
         lines.push('Execution failed.');
@@ -3260,6 +3288,35 @@
     });
   }
 
+  // Global function for copy button (called from inline onclick)
+  window.copyOutputToClipboard = function() {
+    const outputElement = document.getElementById('modal-output-text');
+    if (!outputElement) return;
+
+    const text = outputElement.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      // Visual feedback
+      const btn = document.querySelector('.copy-output-btn');
+      if (btn) {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = `
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="2" fill="none"/>
+          </svg>
+          Copied!
+        `;
+        btn.style.background = '#48bb78';
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.style.background = '';
+        }, 2000);
+      }
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      alert('Failed to copy to clipboard');
+    });
+  };
+
   configModalClose.addEventListener('click', closeConfigModal);
   configModalMergeButton.addEventListener('click', () => {
     if (!activeConfigFormat) {
@@ -3284,4 +3341,21 @@
       }
     }
   });
+
+  // Handle output max lines setting
+  function updateOutputMaxHeight() {
+    const maxLines = parseInt(outputMaxLinesInput.value) || 100;
+    const lineHeight = 1.5; // From CSS line-height
+    const fontSize = 0.9; // rem
+    const remInPx = 16; // Default browser rem size
+    const maxHeight = maxLines * lineHeight * fontSize * remInPx;
+    document.documentElement.style.setProperty('--output-max-height', `${maxHeight}px`);
+  }
+
+  // Initialize output max height
+  updateOutputMaxHeight();
+
+  // Update when user changes the value
+  outputMaxLinesInput.addEventListener('change', updateOutputMaxHeight);
+  outputMaxLinesInput.addEventListener('input', updateOutputMaxHeight);
 })();
