@@ -14,22 +14,52 @@ body {
   color: #e2e8f0;
 }
 
-header {
+.page-header {
   text-align: center;
   padding: 24px 16px;
   border-bottom: 1px solid #2d3748;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
 }
 
-header h1 {
+.page-header h1 {
   margin: 0;
   font-size: 1.8rem;
   color: #f7fafc;
 }
 
-header .subtitle {
+.page-header .header-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.page-header .subtitle {
   margin-top: 4px;
   font-size: 0.9rem;
   color: #a0aec0;
+}
+
+.portal-return-link {
+  display: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #22c55e;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.portal-return-link--visible {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 main {

@@ -7,9 +7,12 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header>
-      <h1>MCP Diagnosis Tool</h1>
-      <p class="subtitle">Inspect and debug your Model Context Protocol (MCP) servers with ease.</p>
+    <header class="page-header">
+      <div class="header-left">
+        <h1>MCP Diagnosis Tool</h1>
+        <p class="subtitle">Inspect and debug your Model Context Protocol (MCP) servers with ease.</p>
+      </div>
+      <a id="back-to-test-portal" class="portal-return-link" href="http://localhost:3055/">← Back to Test Portal</a>
     </header>
 
     <main>
@@ -218,6 +221,21 @@
         </div>
       </div>
     </div>
+    <script>
+      (function () {
+        try {
+          var params = new URLSearchParams(window.location.search);
+          if (params.get("portal") === "nightgreen") {
+            var link = document.getElementById("back-to-test-portal");
+            if (link) {
+              link.classList.add("portal-return-link--visible");
+            }
+          }
+        } catch (err) {
+          /* ignore */
+        }
+      })();
+    </script>
 
     <script src="script.js"></script>
   </body>
