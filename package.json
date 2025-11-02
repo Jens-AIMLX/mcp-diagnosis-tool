@@ -1,6 +1,6 @@
 {
   "name": "mcp-diagnosis-tool",
-  "version": "1.2.1.14",
+  "version": "1.2.1.15",
   "description": "A diagnostic UI for Model Context Protocol (MCP) servers. This tool uses a simple HTTP API and a web front‑end to verify server availability, list exposed tools/prompts/resources, and classify handshake/protocol errors.",
   "main": "server.js",
   "scripts": {

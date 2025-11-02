@@ -7,7 +7,7 @@
 
 (() => {
   // Application version. Increment the last digit on each fix (start: 1.2.1.2)
-  const APP_VERSION = '1.2.1.14';
+  const APP_VERSION = '1.2.1.15';
   try { window.APP_VERSION = APP_VERSION; } catch (_) {}
 
   const form = document.getElementById('diagnose-form');
@@ -1300,7 +1300,7 @@
     return base.trim();
   }
 
-  function buildHandshakeBlock(handshake) {
+  function buildHandshakeBlock(handshake, entry) {
     if (!handshake) {
       return '';
     }
@@ -1323,7 +1323,7 @@
     }
     html += '</div>';
     // Playwright codegen controls (special internal server)
-    if (entry.isPlaywrightCodegen) {
+  if (entry && entry.isPlaywrightCodegen) {
       html += '<div class="detail-block playwright-codegen-block">';
       html += '<strong>Playwright Codegen</strong>';
       html += '<div style="margin-top:8px; display:flex; gap:8px; align-items:center;">';
@@ -1563,7 +1563,7 @@
         detailSections.push(buildConfigSnippet(entry));
       }
       if (entry.handshake) {
-        detailSections.push(buildHandshakeBlock(entry.handshake));
+        detailSections.push(buildHandshakeBlock(entry.handshake, entry));
       }
       // Add session controls after handshake
       detailSections.push(buildSessionControlsBlock(entry));
@@ -3833,6 +3833,8 @@
       const configObj = data.config ?? { format: data.format, topLevel: {}, servers: [] };
       replaceConfigServers(configObj, data.servers || [], fileName);
     } catch (err) {
+      // Log full error to console (helps debugging client-side exceptions)
+      try { console.error('[CLIENT] diagnoseConfigContent error', err && err.stack ? err.stack : err); } catch (_) {}
       alert(`Failed to process ${fileName}: ${err.message}`);
       clearCurrentConfigStatus(`${fileName} — failed`);
     } finally {

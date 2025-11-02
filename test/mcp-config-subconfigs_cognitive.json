@@ -1,0 +1,25 @@
+﻿{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--config",
+        "C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/plwghtconfig_cognitive.json"
+      ]
+    },
+    "cognitive-visual-analytics": {
+      "command": "node",
+      "args": [
+        "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/UserPerpectiveAI/mcp-server/mcp-server-stdio.js",
+        "--config",
+        "C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/cognitive-visual-config_cognitive.json"
+      ],
+      "tool_timeout_sec": 120
+    },
+    "hello_world": {
+      "command": "C:/Users/jenss/ONEDRI~2/Code/source/AIServer/BPMX_MCP/node_modules/.bin/mcp-hello-world.cmd"
+    }
+  }
+}

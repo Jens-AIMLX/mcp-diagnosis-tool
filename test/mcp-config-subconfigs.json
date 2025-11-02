@@ -1,4 +1,15 @@
 ﻿{
+  "format": "json",
+  "topLevel": {},
+  "servers": [
+    {
+      "name": "local-http",
+      "spec": { "mode": "http", "url": "http://localhost:3060/mcp" },
+      "configEntry": { "note": "test-entry" }
+    }
+  ]
+}
+{
   "mcpServers": {
     "playwright": {
       "command": "npx",

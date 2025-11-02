@@ -220,7 +220,12 @@ app.post('/api/config/diagnose', async (req, res) => {
     res.json({ ok: true, format: normalized.format, config: normalized, servers });
   } catch (err) {
     const status = err.code && err.code.startsWith('CONFIG_') ? 400 : 500;
-    res.status(status).json({ ok: false, error: { kind: 'config_error', details: err.message } });
+    // Log full stack for debugging (temporary)
+    try { logError('config_diagnose_error', err); } catch (_) {}
+    try { log('config_diagnose_stack', { stack: err && err.stack ? String(err.stack).slice(0,2000) : String(err) }); } catch (_) {}
+    // Return sanitized message to client (do not leak internal stacks)
+    const responseError = { kind: 'config_error', details: 'Internal config processing error (see server logs)' };
+    res.status(status).json({ ok: false, error: responseError });
   }
 });
 
