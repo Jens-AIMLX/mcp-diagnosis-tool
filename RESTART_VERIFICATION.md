@@ -4,7 +4,7 @@
 - **Version**: 0.8.2 ✅ (confirmed in debug.log)
 - **Graceful shutdown**: Working ✅
 - **Console output**: Shows version at startup ✅
-- **Startup script**: Shows version v0.8.2 ✅
+- **Startup script**: Shows version v0.8.2.2 ✅
 
 **Evidence from debug.log:**
 ```

@@ -6,6 +6,10 @@
 // arguments (when declared) and testing tools through a modal interface.
 
 (() => {
+  // Application version. Increment the last digit on each fix (start: 1.2.1.2)
+  const APP_VERSION = '1.2.1.14';
+  try { window.APP_VERSION = APP_VERSION; } catch (_) {}
+
   const form = document.getElementById('diagnose-form');
   const modeSelect = document.getElementById('mode-select');
   const httpRow = document.getElementById('http-row');
@@ -46,6 +50,31 @@
   const outputMaxLinesInput = document.getElementById('output-max-lines');
 
   const servers = [];
+  // Permanent internal server for Playwright codegen recording
+  // This server provides a UI to capture/playback a Playwright codegen script
+  servers.push({
+    id: 'playwright-codegen',
+    serverName: 'playwright-codegen',
+    displayName: 'Playwright Codegen',
+    source: 'internal',
+    spec: { mode: 'codegen' },
+    status: 'ok',
+    isPlaywrightCodegen: true,
+    activeSessionId: null,
+    sessionCreatedAt: null,
+    callHistory: [],
+    playwrightUrl: '',
+    playwrightRecordingJs: '',
+    playwrightRecordingPy: '',
+    _playwright_timer: null,
+    _playwright_window: null
+  });
+
+  // Set version string in UI if present
+  try {
+    const verEl = document.getElementById('app-version');
+    if (verEl) verEl.textContent = 'v ' + APP_VERSION;
+  } catch (_) {}
   // --- Server control foldout elements ---
   const serverFoldout = document.getElementById('server-foldout');
   const serverFoldoutToggle = document.getElementById('server-foldout-toggle');
@@ -55,10 +84,11 @@
   const serverNextRotationEl = document.getElementById("server-next-rotation");
   const serverLogStateEl = document.getElementById('server-log-state');
   const serverOfflineNote = document.getElementById('server-offline-note');
+  
+  const btnRestart = document.getElementById('btn-restart-server');
   const btnReleaseLog = document.getElementById('btn-release-log');
   const btnRotateLog = document.getElementById('btn-rotate-log');
   const btnShutdown = document.getElementById('btn-shutdown-server');
-  const btnRestart = document.getElementById('btn-restart-server');
 
 
   // --- Workflow controls ---
@@ -379,22 +409,104 @@
 
 
 	  // Workflow controls wiring
-	  if (btnExportWorkflow) {
-	    btnExportWorkflow.addEventListener('click', async () => {
-	      const wf = workflowSession || getOrStartWorkflow();
-	      if (!wf.calls || wf.calls.length === 0) {
-	        alert('No workflow calls recorded yet.');
-	        return;
-	      }
-	      try {
-	        const artifacts = generateCombinedWorkflowArtifacts(wf);
-	        await saveArtifactsViaDialog(artifacts);
-	      } catch (e) {
-	        console.error('Workflow export failed:', e);
-	        alert(`Workflow export failed: ${e.message || e}`);
-	      }
-	    });
-	  }
+    // Export filename modal elements (created in index.html)
+    const exportFilenameModal = document.getElementById('export-filename-modal');
+    const exportFilenameInput = document.getElementById('export-filename-input');
+    const exportFilenameSave = document.getElementById('export-filename-save');
+    const exportFilenameCancel = document.getElementById('export-filename-cancel');
+    const exportFilenameClose = document.getElementById('export-filename-close');
+
+    function openExportFilenameModal(suggested, onSave, onCancel) {
+      if (!exportFilenameModal) return;
+      exportFilenameInput.value = suggested || '';
+      exportFilenameModal.classList.remove('hidden');
+      modalBackdrop.classList.remove('hidden');
+
+      const cleanup = () => {
+        exportFilenameModal.classList.add('hidden');
+        modalBackdrop.classList.add('hidden');
+        exportFilenameSave.removeEventListener('click', saveHandler);
+        exportFilenameCancel.removeEventListener('click', cancelHandler);
+        exportFilenameClose.removeEventListener('click', cancelHandler);
+      };
+
+      const saveHandler = async (ev) => {
+        ev.preventDefault();
+        const chosen = (exportFilenameInput.value || '').replace(/\.(yaml|yml|js|py)$/i, '').trim();
+        if (!chosen) {
+          alert('Please provide a valid base filename.');
+          return;
+        }
+        // call provided onSave; this is executed in direct user gesture (click)
+        try {
+          await onSave(chosen);
+        } finally {
+          cleanup();
+        }
+      };
+
+      const cancelHandler = (ev) => {
+        ev && ev.preventDefault();
+        cleanup();
+        if (typeof onCancel === 'function') onCancel();
+      };
+
+      exportFilenameSave.addEventListener('click', saveHandler);
+      exportFilenameCancel.addEventListener('click', cancelHandler);
+      exportFilenameClose.addEventListener('click', cancelHandler);
+      // focus input for quick typing
+      setTimeout(() => exportFilenameInput.focus(), 50);
+    }
+
+    if (btnExportWorkflow) {
+      btnExportWorkflow.addEventListener('click', async () => {
+        const wf = workflowSession || getOrStartWorkflow();
+        if (!wf.calls || wf.calls.length === 0) {
+          alert('No workflow calls recorded yet.');
+          return;
+        }
+        try {
+          const artifacts = await generateCombinedWorkflowArtifacts(wf);
+          const suggestedBase = artifacts.baseName || 'mcp_session';
+
+          // If folder picking is supported, open modal to collect filename then call picker
+          if (window.showDirectoryPicker) {
+            openExportFilenameModal(suggestedBase, async (chosenBase) => {
+              try {
+                showExportStatus('Opening folder picker...');
+                const dirHandle = await window.showDirectoryPicker();
+                const targets = [
+                  { name: `${chosenBase}.yaml`, content: artifacts.yaml },
+                  { name: `${chosenBase}.js`, content: artifacts.js },
+                  { name: `${chosenBase}.py`, content: artifacts.py }
+                ];
+                for (const t of targets) {
+                  const fh = await dirHandle.getFileHandle(t.name, { create: true });
+                  const w = await fh.createWritable();
+                  await w.write(t.content);
+                  await w.close();
+                }
+                showExportStatus('Export saved to folder');
+              } catch (err) {
+                console.error('Folder-picker export failed or was cancelled, falling back:', err);
+                showExportStatus('Folder pick cancelled — falling back to file save', 3000);
+                // fallback to existing save flow
+                await saveArtifactsViaDialog(artifacts);
+              }
+            }, () => {
+              // cancelled modal; do nothing
+            });
+            return;
+          }
+
+          // Fallback: use existing save flow (no folder picker available)
+          await saveArtifactsViaDialog(artifacts);
+        } catch (e) {
+          console.error('Workflow export failed:', e);
+          alert(`Workflow export failed: ${e.message || e}`);
+        }
+      });
+    }
 	  if (btnCloseAllSessions) {
 	    btnCloseAllSessions.addEventListener('click', async () => {
 	      console.log('[DEBUG] Close All Sessions button clicked');
@@ -482,7 +594,24 @@
 	            entry.isWorkflowSession = true; // Flag to distinguish from actual MCP sessions
 	          }
 	        }
-	        renderServers();
+          renderServers();
+          // Auto-activate Playwright codegen for the internal server when workflow session starts
+          (async () => {
+            try {
+              const codeEntry = servers.find(e => e.isPlaywrightCodegen || (e.serverName && String(e.serverName).toLowerCase().indexOf('playwright') !== -1 && e.source === 'internal'));
+              if (codeEntry && !codeEntry._playwright_sessionId) {
+                const defaultUrl = window.location.origin || window.location.href;
+                const resp = await fetch('/api/playwright/codegen/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: defaultUrl }) });
+                const data = await resp.json().catch(() => ({}));
+                if (resp.ok && data && data.ok) {
+                  codeEntry._playwright_sessionId = data.sessionId;
+                  codeEntry._playwright_outPath = data.outPath;
+                  codeEntry.playwrightUrl = defaultUrl;
+                  renderServers();
+                }
+              }
+            } catch (_) {}
+          })();
 	      } else {
 	        // Unchecked - close all active sessions
 	        console.log('[DEBUG] Checkbox unchecked, closing sessions');
@@ -601,6 +730,38 @@
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  // Small in-page transient status to help debug export flow for users who don't open DevTools
+  function showExportStatus(message, timeout = 4000) {
+    try {
+      const id = 'export-status-toast';
+      let el = document.getElementById(id);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.style.position = 'fixed';
+        el.style.right = '16px';
+        el.style.bottom = '16px';
+        el.style.zIndex = 99999;
+        el.style.background = 'rgba(0,0,0,0.8)';
+        el.style.color = '#fff';
+        el.style.padding = '10px 14px';
+        el.style.borderRadius = '6px';
+        el.style.fontSize = '13px';
+        el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)';
+        document.body.appendChild(el);
+      }
+      el.textContent = message;
+      el.style.opacity = '1';
+      if (el._timeout) clearTimeout(el._timeout);
+      el._timeout = setTimeout(() => {
+        el.style.transition = 'opacity 300ms ease';
+        el.style.opacity = '0';
+      }, timeout);
+    } catch (_) {
+      // ignore
+    }
   }
 
   /**
@@ -1161,6 +1322,27 @@
       html += `<pre>${escapeHtml(stringifyValue(handshake.capabilities))}</pre>`;
     }
     html += '</div>';
+    // Playwright codegen controls (special internal server)
+    if (entry.isPlaywrightCodegen) {
+      html += '<div class="detail-block playwright-codegen-block">';
+      html += '<strong>Playwright Codegen</strong>';
+      html += '<div style="margin-top:8px; display:flex; gap:8px; align-items:center;">';
+      html += `<input type="text" class="playwright-url-input" placeholder="Enter start URL" value="${escapeHtml(entry.playwrightUrl || '')}" style="flex:1; padding:6px;" />`;
+      html += `<button type="button" class="playwright-start" data-entry-id="${escapeAttribute(entry.id)}">Start</button>`;
+      html += `<button type="button" class="playwright-pause" data-entry-id="${escapeAttribute(entry.id)}">Pause</button>`;
+      html += `<button type="button" class="playwright-stop" data-entry-id="${escapeAttribute(entry.id)}">Stop</button>`;
+      html += '</div>';
+      html += '<div style="margin-top:8px;">';
+      html += '<label style="font-weight:600;">Recorded script (JS)</label>';
+      html += `<textarea class="playwright-recording-text" style="width:100%;height:140px;">${escapeHtml(entry.playwrightRecordingJs || '')}</textarea>`;
+      html += '<div style="display:flex; gap:8px; margin-top:6px;">';
+      html += `<button type="button" class="playwright-save-script" data-entry-id="${escapeAttribute(entry.id)}">Save script</button>`;
+      html += `<button type="button" class="playwright-clear-script" data-entry-id="${escapeAttribute(entry.id)}">Clear</button>`;
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    }
+
     return html;
   }
 
@@ -1420,8 +1602,101 @@
     if (button.disabled) {
       return;
     }
-    const entryId = Number(button.dataset.entryId);
-    const entry = Number.isFinite(entryId) ? servers.find((item) => item.id === entryId) : null;
+    // Determine entry by dataset attributes (support string ids for internal servers)
+    const rawEntryKey = button.dataset.entryId || button.dataset.serverId || button.dataset.entryId;
+    let entry = null;
+    if (rawEntryKey !== undefined) {
+      // Try numeric id first
+      const possibleNum = Number(rawEntryKey);
+      if (Number.isFinite(possibleNum)) entry = servers.find((item) => item.id === possibleNum);
+      if (!entry) entry = servers.find((item) => String(item.id) === String(rawEntryKey) || item.serverName === rawEntryKey || item.displayName === rawEntryKey || sanitizeKey(item.id || item.serverName || 'unknown') === rawEntryKey);
+    } else {
+      entry = null;
+    }
+
+    // Playwright codegen control buttons
+    if (button.classList.contains('playwright-start') || button.classList.contains('playwright-pause') || button.classList.contains('playwright-stop') || button.classList.contains('playwright-save-script') || button.classList.contains('playwright-clear-script')) {
+      const eid = rawEntryKey;
+      const codeEntry = servers.find((s) => String(s.id) === String(eid) || s.serverName === eid || s.displayName === eid);
+      if (!codeEntry) {
+        alert('Unable to locate Playwright Codegen server entry.');
+        return;
+      }
+      // Start: open window to URL and begin simple navigation recording (polling)
+      if (button.classList.contains('playwright-start')) {
+        const row = button.closest('.playwright-codegen-block');
+        const input = row ? row.querySelector('.playwright-url-input') : null;
+        const url = input ? input.value.trim() : (codeEntry.playwrightUrl || '');
+        if (!url) { alert('Please enter a start URL first.'); return; }
+        codeEntry.playwrightUrl = url;
+        try {
+          // Request server to start Playwright codegen and return session id + outPath
+          const resp = await fetch('/api/playwright/codegen/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) {
+            throw new Error(data?.error?.details || 'Failed to start server-side codegen');
+          }
+          codeEntry._playwright_sessionId = data.sessionId;
+          codeEntry._playwright_outPath = data.outPath;
+          codeEntry.playwrightRecordingJs = '';
+          renderServers();
+        } catch (e) {
+          alert('Failed to start Playwright codegen: ' + (e.message || e));
+        }
+        return;
+      }
+      // Pause: stop polling but keep window
+      if (button.classList.contains('playwright-pause')) {
+        // Pause behaves same as stop for server codegen: stop process but keep recorded file
+        if (!codeEntry._playwright_sessionId) { alert('No active codegen session to pause'); return; }
+        try {
+          const resp = await fetch('/api/playwright/codegen/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: codeEntry._playwright_sessionId }) });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) throw new Error(data?.error?.details || 'Failed to stop codegen');
+          codeEntry.playwrightRecordingJs = data.content || '';
+          // keep outPath available; clear session id to indicate stopped
+          codeEntry._playwright_outPath = data.outPath;
+          codeEntry._playwright_sessionId = null;
+          renderServers();
+        } catch (e) {
+          alert('Failed to pause Playwright codegen: ' + (e.message || e));
+        }
+        return;
+      }
+      // Stop: same as pause but mark as stopped
+      if (button.classList.contains('playwright-stop')) {
+        if (!codeEntry._playwright_sessionId) { alert('No active codegen session to stop'); return; }
+        try {
+          const resp = await fetch('/api/playwright/codegen/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: codeEntry._playwright_sessionId }) });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) throw new Error(data?.error?.details || 'Failed to stop codegen');
+          codeEntry.playwrightRecordingJs = data.content || '';
+          codeEntry._playwright_outPath = data.outPath;
+          codeEntry._playwright_sessionId = null;
+          renderServers();
+        } catch (e) {
+          alert('Failed to stop Playwright codegen: ' + (e.message || e));
+        }
+        return;
+      }
+      // Save script: read textarea and store as recording
+      if (button.classList.contains('playwright-save-script')) {
+        const row = button.closest('.playwright-codegen-block');
+        const ta = row ? row.querySelector('.playwright-recording-text') : null;
+        if (ta) {
+          codeEntry.playwrightRecordingJs = ta.value || '';
+          alert('Playwright script saved to entry. It will be included in exported artifacts.');
+          renderServers();
+        }
+        return;
+      }
+      // Clear script
+      if (button.classList.contains('playwright-clear-script')) {
+        codeEntry.playwrightRecordingJs = '';
+        renderServers();
+        return;
+      }
+    }
 
     if (button.classList.contains('tool-test-button')) {
       if (!entry) {
@@ -1714,8 +1989,113 @@
     return pad + yamlScalar(value);
   }
 
-  function generateWorkflowArtifacts(entry) {
-    const spec = JSON.parse(JSON.stringify(entry.spec || {}));
+  async function generateWorkflowArtifacts(entry) {
+    // Prefer a meaningful spec from several possible sources: entry.spec, entry.configEntry,
+    // entry.configSnippetValue / entry.configSnippets, or currentConfig. This prevents
+    // exporting an empty `{}` when the UI shows a config snippet for the server.
+    async function getExportableSpec(e) {
+      try {
+        // 1) If entry.spec exists and has useful keys, use it
+        if (e && e.spec && typeof e.spec === 'object' && Object.keys(e.spec).length) {
+          return JSON.parse(JSON.stringify(e.spec));
+        }
+
+        // 2) If entry.configEntry is present (parsed config), prefer its spec or shape
+        if (e && e.configEntry && typeof e.configEntry === 'object') {
+          if (e.configEntry.spec && typeof e.configEntry.spec === 'object' && Object.keys(e.configEntry.spec).length) {
+            return JSON.parse(JSON.stringify(e.configEntry.spec));
+          }
+          // sometimes the config entry itself describes the server (has url/command/mode)
+          const ce = e.configEntry;
+          if (ce.url || ce.command || ce.mode) {
+            return JSON.parse(JSON.stringify(ce));
+          }
+        }
+
+        // 3) If there's a config snippet value (string), try to parse JSON from it
+        const snippet = (e && (e.configSnippetValue || e.configSnippet)) || '';
+        if (typeof snippet === 'string' && snippet.trim()) {
+          try {
+            const parsed = JSON.parse(snippet);
+            if (parsed && typeof parsed === 'object') {
+              if (parsed.spec && typeof parsed.spec === 'object' && Object.keys(parsed.spec).length) {
+                return parsed.spec;
+              }
+              // If snippet directly contains server keys (url/command/mode), use it
+              if (parsed.url || parsed.command || parsed.mode) {
+                return parsed;
+              }
+              // If snippet is an array or object where a server entry is nested, attempt to find a matching entry name
+            }
+          } catch (_) {
+            // not JSON; try server-side parse (supports TOML and other formats)
+            try {
+              const resp = await fetch('/api/export/parse-snippet', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: snippet })
+              });
+              const data = await resp.json().catch(() => ({}));
+              if (resp.ok && data && data.parsed) {
+                const parsed = data.parsed;
+                if (parsed && typeof parsed === 'object') {
+                  if (parsed.spec && typeof parsed.spec === 'object' && Object.keys(parsed.spec).length) return parsed.spec;
+                  if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
+                    // try to find a server in parsed.mcpServers matching entry.serverName
+                    const key = e.serverName || e.name;
+                    if (key && parsed.mcpServers[key]) return parsed.mcpServers[key];
+                  }
+                  // direct server object
+                  if (parsed.url || parsed.command || parsed.mode) return parsed;
+                }
+              }
+            } catch (parseErr) {
+              // ignore
+            }
+          }
+        }
+
+        // 4) Look inside currentConfig (loaded full config) for a matching server
+        if (typeof currentConfig === 'object' && currentConfig) {
+          // arrays of servers
+          if (Array.isArray(currentConfig.servers)) {
+            const found = currentConfig.servers.find((s) => (s.name === (e.serverName || e.name) || s.serverName === (e.serverName || e.name)));
+            if (found) {
+              if (found.spec && typeof found.spec === 'object' && Object.keys(found.spec).length) return JSON.parse(JSON.stringify(found.spec));
+              if (found.url || found.command || found.mode) return JSON.parse(JSON.stringify(found));
+            }
+          }
+          // map-style servers under mcpServers
+          if (currentConfig.mcpServers && typeof currentConfig.mcpServers === 'object') {
+            const key = e.serverName || e.name;
+            if (key && currentConfig.mcpServers[key]) {
+              const found = currentConfig.mcpServers[key];
+              if (found.spec && typeof found.spec === 'object' && Object.keys(found.spec).length) return JSON.parse(JSON.stringify(found.spec));
+              if (found.url || found.command || found.mode) return JSON.parse(JSON.stringify(found));
+            }
+          }
+        }
+
+        // Default: return an empty object (caller will still export something), but prefer {} to null
+        return {};
+      } catch (err) {
+        console.debug('[EXPORT] getExportableSpec error', err);
+        return {};
+      }
+    }
+
+  const spec = await getExportableSpec(entry);
+    // Include the raw config snippet (as shown in the UI) as a comment in exported artifacts
+    const rawSnippetSingle = (entry && (entry.configSnippetValue || entry.configSnippet))
+      || (entry && entry.configSnippets && (entry.configSnippets.json || entry.configSnippets.toml)) || '';
+    const snippetCommentYamlSingle = rawSnippetSingle
+      ? ('# --- config snippet (as shown in UI) ---\n' + rawSnippetSingle.split('\n').map(l => '# ' + l).join('\n') + '\n# --- end snippet ---\n\n')
+      : '';
+    const snippetCommentJsSingle = rawSnippetSingle
+      ? ('/* --- config snippet (as shown in UI) ---\n' + rawSnippetSingle + '\n--- end snippet --- */\n\n')
+      : '';
+    const snippetCommentPySingle = rawSnippetSingle
+      ? ('""" --- config snippet (as shown in UI) ---\n' + rawSnippetSingle + '\n--- end snippet --- """\n\n')
+      : '';
     const steps = (entry.callHistory || []).map((h) => ({
       tool: h.toolName,
       args: h.args || {},
@@ -1747,10 +2127,10 @@
       server: { name: displayName, spec },
       steps: prettySteps
     };
-    const yaml = toSingleQuotedYAML(workflow) + '\n';
+  const yaml = `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` + snippetCommentYamlSingle + toSingleQuotedYAML(workflow) + '\n';
     const baseName = `${sanitizeFilenameSegment(displayName)}_${formatTimestampForFilename(new Date())}_session`;
 
-    let js = `/* Generated by MCP Diagnosis Tool */\n` +
+  let js = snippetCommentJsSingle + `/* Generated by MCP Diagnosis Tool */\n` +
 `const BASE_URL = process.env.MCP_DOCTOR_URL || 'http://localhost:3000';\n` +
 `const spec = ${JSON.stringify(spec, null, 2)};\n` +
 `const steps = ${JSON.stringify(steps, null, 2)};\n` +
@@ -1768,7 +2148,7 @@
 `}\n` +
 `run().catch(err=>{ console.error('Run failed:', err); process.exit(1); });\n`;
 
-    let py = `# Generated by MCP Diagnosis Tool\n` +
+  let py = snippetCommentPySingle + `# Generated by MCP Diagnosis Tool\n` +
 `import os, json, requests\n` +
 `BASE_URL = os.getenv('MCP_DOCTOR_URL', 'http://localhost:3000')\n` +
 `spec = ${JSON.stringify(spec, null, 2)}\n` +
@@ -1947,15 +2327,159 @@
   `if __name__ == '__main__':\n` +
   `    asyncio.run(main())\n`;
 
-    return { yaml, js, py, baseName };
+    // Build API-oriented artifacts to replay via the diagnosis server HTTP API
+    const apiYamlObj = {
+      exported_with: `MCP Diagnosis Tool v ${APP_VERSION}`,
+      servers: exportServers,
+      steps: prettySteps
+    };
+    const apiYaml = `# API replay manifest for MCP Diagnosis Tool v ${APP_VERSION}\n` +
+      toSingleQuotedYAML(apiYamlObj) + '\n';
+
+    const apiJs = snippetCommentJs + `// API replay script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
+      `// Usage: node ${baseName}.api.js http://localhost:3060\n` +
+      `const fetch = require('node-fetch');\n` +
+      `(async function(){\n` +
+      `  const base = process.argv[2] || 'http://localhost:3060';\n` +
+      `  const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
+      `  const steps = ${JSON.stringify(prettySteps, null, 2)};\n` +
+      `  const sessions = {};\n` +
+      `  for (const s of servers) {\n` +
+      `    const resp = await fetch(base + '/api/sessions/open', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ spec: s.spec }) });\n` +
+      `    const j = await resp.json(); if (!j.sessionId) { console.error('Failed to open session for', s.name, j); process.exit(2); }\n` +
+      `    sessions[s.name] = j.sessionId; console.log('Opened', s.name, j.sessionId);\n` +
+      `  }\n` +
+      `  for (const step of steps) {\n` +
+      `    const sid = sessions[step.server]; if (!sid) { console.error('No session for', step.server); continue; }\n` +
+      `    console.log('Calling', step.tool, 'on', step.server);\n` +
+      `    const call = await fetch(base + '/api/tools/call', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid, tool: step.tool, args: step.args || {} }) });\n` +
+      `    const out = await call.json().catch(() => null); console.log('Result', out);\n` +
+      `  }\n` +
+      `  for (const [name, sid] of Object.entries(sessions)) {\n` +
+      `    await fetch(base + '/api/sessions/close', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid }) });\n` +
+      `    console.log('Closed', name);\n` +
+      `  }\n` +
+      `})();\n`;
+
+    const apiPs = snippetCommentJs + `# API replay PowerShell script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
+      `# Usage: powershell -File ${baseName}.api.ps1 -BaseUrl http://localhost:3060\n` +
+      `$BaseUrl = $args[0]; if (-not $BaseUrl) { $BaseUrl = 'http://localhost:3060' }\n` +
+      `$servers = ${JSON.stringify(exportServers, null, 2)}\n` +
+      `$steps = ${JSON.stringify(prettySteps, null, 2)}\n` +
+      `$sessions = @{}\n` +
+      `foreach ($s in $servers) {\n` +
+      `  $body = @{ spec = $s.spec } | ConvertTo-Json -Depth 10;\n` +
+      `  $resp = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/open') -ContentType 'application/json' -Body $body;\n` +
+      `  if (-not $resp.sessionId) { Write-Error "Failed to open session for $($s.name): $($resp|ConvertTo-Json -Depth 5)" ; exit 2 }\n` +
+      `  $sessions[$s.name] = $resp.sessionId; Write-Host "Opened $($s.name) -> $($resp.sessionId)";\n` +
+      `}\n` +
+      `foreach ($st in $steps) {\n` +
+      `  $sid = $sessions[$st.server]; if (-not $sid) { Write-Warning "No session for $($st.server)" ; continue }\n` +
+      `  $call = @{ sessionId = $sid; tool = $st.tool; args = $st.args } | ConvertTo-Json -Depth 12;\n` +
+      `  $out = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/tools/call') -ContentType 'application/json' -Body $call;\n` +
+      `  Write-Host "Call result:"; $out | ConvertTo-Json -Depth 5;\n` +
+      `}\n` +
+      `foreach ($kv in $sessions.GetEnumerator()) { Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/close') -ContentType 'application/json' -Body (ConvertTo-Json @{ sessionId = $kv.Value } -Depth 5); Write-Host "Closed $($kv.Key)" }\n`;
+
+    return { yaml, js, py, apiYaml, apiJs: apiJs, apiPs: apiPs, baseName };
   }
+
+  // Expose helpers for automation/testing (Playwright can call these via page.evaluate)
+  try {
+    window.apiBuildExportForEntry = async function(entry) {
+      return await generateWorkflowArtifacts(entry);
+    };
+    window.apiBuildCombinedExportForWorkflow = async function(wf) {
+      return await generateCombinedWorkflowArtifacts(wf);
+    };
+  } catch (_) {
+    // ignore in non-browser contexts
+  }
+
+  // Automation helper: when the page is opened with ?automate_export=1, build export
+  // artifacts automatically and print them to the console so external runners (Playwright)
+  // can capture them without using page.evaluate.
+  try {
+    if (typeof window !== 'undefined' && window.location && window.location.search && window.location.search.indexOf('automate_export=1') !== -1) {
+      (async () => {
+        try {
+          // Fallback automation: call the server /api/export/template endpoint so the page
+          // emits the generated artifacts to the console. This avoids depending on internal
+          // UI state and keeps the automation stable.
+          const spec = { mode: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@latest', '--output-dir', 'C:/Users/jenss/OneDrive - Singularyt UG/Code/Test/.evidence/screenshots/tmp_playwright_export', '--browser','chrome','--viewport-size','2400,1350','--isolated','--no-sandbox'] };
+          const body = { spec: spec, serverName: 'playwright', callHistory: [{ toolName: 'browser_navigate', args: { url: window.location.origin } }] };
+          const resp = await fetch('/api/export/template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const json = await resp.json().catch(() => null);
+          if (json && json.ok) {
+            console.log('EXPORT_ARTIFACTS:' + JSON.stringify(json));
+          } else {
+            console.error('EXPORT_ERROR: server did not return artifacts', json);
+          }
+        } catch (e) {
+          console.error('EXPORT_ERROR:' + String(e));
+        }
+      })();
+    }
+  } catch (_) {}
 
   async function saveArtifactsViaDialog(artifacts) {
     const suggested = artifacts.baseName || 'mcp_session';
+    // Debug trace to help diagnose which branch runs in the browser
+    try {
+      const info = { showDirectoryPicker: !!window.showDirectoryPicker, showSaveFilePicker: !!window.showSaveFilePicker };
+      console.log('[DEBUG] saveArtifactsViaDialog invoked. APIs:', info);
+      showExportStatus(`Export APIs: dir=${info.showDirectoryPicker} save=${info.showSaveFilePicker}`, 3000);
+    } catch (_) {}
+    // Use the suggested base name; do NOT prompt here. The folder picker is invoked
+    // directly from the click handler to preserve the user gesture. This function only
+    // performs fallback saves (save-file picker or downloads).
+    const baseName = artifacts.baseName || suggested;
 
-    // Use showSaveFilePicker for single-dialog experience
+    // Prefer directory picker so we can create a subfolder named after the baseName
+    if (window.showDirectoryPicker) {
+      try {
+        showExportStatus('Please choose a folder to save the export...');
+        const dirHandle = await window.showDirectoryPicker();
+        // Create a subdirectory with the baseName to keep all files together
+        const sub = await dirHandle.getDirectoryHandle(baseName, { create: true });
+
+        // Write all artifacts into the subdirectory
+        const filesToWrite = [
+          { name: `${baseName}.yaml`, content: artifacts.yaml },
+          { name: `${baseName}.js`, content: artifacts.js },
+          { name: `${baseName}.py`, content: artifacts.py },
+          { name: `${baseName}.api.js`, content: artifacts.apiJs || artifacts.apiJs },
+          { name: `${baseName}.api.ps1`, content: artifacts.apiPs || artifacts.apiPs },
+          { name: `${baseName}.api.yaml`, content: artifacts.apiYaml || artifacts.apiYaml }
+        ];
+
+        if (artifacts.playwrightJs) filesToWrite.push({ name: `${baseName}.playwright.js`, content: artifacts.playwrightJs });
+        if (artifacts.playwrightPy) filesToWrite.push({ name: `${baseName}.playwright.py`, content: artifacts.playwrightPy });
+
+        for (const f of filesToWrite) {
+          try {
+            const fh = await sub.getFileHandle(f.name, { create: true });
+            const w = await fh.createWritable();
+            await w.write(f.content);
+            await w.close();
+          } catch (e) {
+            console.error('Failed to write', f.name, e);
+            throw e;
+          }
+        }
+        showExportStatus('Export saved to folder: ' + baseName, 4000);
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // user cancelled
+        console.warn('Directory-picker save failed, falling back to file pickers:', err);
+        // Fall through to legacy save-file picker flow below
+      }
+    }
+
+    // Use showSaveFilePicker for single-file experience (fallback)
     if (window.showSaveFilePicker) {
       try {
+        showExportStatus('Opening save dialog for YAML...');
         // Show save dialog for the YAML file (primary file)
         const fileHandle = await window.showSaveFilePicker({
           suggestedName: `${suggested}.yaml`,
@@ -1970,13 +2494,73 @@
         await writable.write(artifacts.yaml);
         await writable.close();
 
-        // Extract base filename from the saved file
-        const savedName = fileHandle.name.replace(/\.yaml$/, '');
+  // Use the baseName chosen by the user as the saved base filename
+  const savedName = baseName;
 
-        // Save companion files (.js and .py) to default downloads folder
-        // This avoids multiple dialogs while keeping all files together
-        downloadTextFile(`${savedName}.js`, artifacts.js, 'application/javascript;charset=utf-8');
-        downloadTextFile(`${savedName}.py`, artifacts.py, 'text/x-python;charset=utf-8');
+        // Try to write companion files into a subdirectory in the same parent if possible
+        try {
+          if (typeof fileHandle.getParent === 'function') {
+            const parent = await fileHandle.getParent();
+            if (parent) {
+              const sub = await parent.getDirectoryHandle(savedName, { create: true });
+              const writeList = [
+                { name: `${savedName}.js`, content: artifacts.js },
+                { name: `${savedName}.py`, content: artifacts.py },
+                { name: `${savedName}.api.js`, content: artifacts.apiJs || artifacts.apiJs },
+                { name: `${savedName}.api.ps1`, content: artifacts.apiPs || artifacts.apiPs },
+                { name: `${savedName}.api.yaml`, content: artifacts.apiYaml || artifacts.apiYaml }
+              ];
+                if (artifacts.playwrightJs) writeList.push({ name: `${savedName}.playwright.js`, content: artifacts.playwrightJs });
+                if (artifacts.playwrightPy) writeList.push({ name: `${savedName}.playwright.py`, content: artifacts.playwrightPy });
+              for (const f of writeList) {
+                const fh = await sub.getFileHandle(f.name, { create: true });
+                const w = await fh.createWritable();
+                await w.write(f.content);
+                await w.close();
+              }
+              return;
+            }
+          }
+
+          // If getParent is not available, prompt the user to pick a directory to create the subfolder
+          if (window.showDirectoryPicker) {
+            try {
+              const dirHandle = await window.showDirectoryPicker();
+              const sub = await dirHandle.getDirectoryHandle(savedName, { create: true });
+              const writeList = [
+                { name: `${savedName}.js`, content: artifacts.js },
+                { name: `${savedName}.py`, content: artifacts.py },
+                { name: `${savedName}.api.js`, content: artifacts.apiJs || artifacts.apiJs },
+                { name: `${savedName}.api.ps1`, content: artifacts.apiPs || artifacts.apiPs },
+                { name: `${savedName}.api.yaml`, content: artifacts.apiYaml || artifacts.apiYaml }
+              ];
+                if (artifacts.playwrightJs) writeList.push({ name: `${savedName}.playwright.js`, content: artifacts.playwrightJs });
+                if (artifacts.playwrightPy) writeList.push({ name: `${savedName}.playwright.py`, content: artifacts.playwrightPy });
+              for (const f of writeList) {
+                const fh = await sub.getFileHandle(f.name, { create: true });
+                const w = await fh.createWritable();
+                await w.write(f.content);
+                await w.close();
+              }
+              return;
+            } catch (innerErr) {
+              // If user cancels the companion file pickers, silently continue to fallback below.
+            }
+          }
+        } catch (writeErr) {
+          // If writing companion files via FS Access API failed, fall back to downloads below.
+          console.error('Failed to write companion files to same directory:', writeErr);
+        }
+
+  // Fallback: download to default downloads folder (last resort)
+  showExportStatus('Saving to browser Downloads (fallback)', 4000);
+  downloadTextFile(`${savedName}.js`, artifacts.js, 'application/javascript;charset=utf-8');
+  downloadTextFile(`${savedName}.py`, artifacts.py, 'text/x-python;charset=utf-8');
+  downloadTextFile(`${savedName}.api.js`, artifacts.apiJs || '', 'application/javascript;charset=utf-8');
+  downloadTextFile(`${savedName}.api.ps1`, artifacts.apiPs || '', 'text/powershell;charset=utf-8');
+  downloadTextFile(`${savedName}.api.yaml`, artifacts.apiYaml || '', 'text/yaml;charset=utf-8');
+    if (artifacts.playwrightJs) downloadTextFile(`${savedName}.playwright.js`, artifacts.playwrightJs, 'application/javascript;charset=utf-8');
+    if (artifacts.playwrightPy) downloadTextFile(`${savedName}.playwright.py`, artifacts.playwrightPy, 'text/x-python;charset=utf-8');
 
         // Silent success - no alert needed
         return;
@@ -1990,9 +2574,12 @@
     }
 
     // Fallback to downloads (no save picker available)
-    downloadTextFile(`${suggested}.yaml`, artifacts.yaml, 'text/yaml;charset=utf-8');
-    downloadTextFile(`${suggested}.js`, artifacts.js, 'application/javascript;charset=utf-8');
-    downloadTextFile(`${suggested}.py`, artifacts.py, 'text/x-python;charset=utf-8');
+  showExportStatus('Saving to browser Downloads (no file picker available)', 4000);
+  downloadTextFile(`${suggested}.yaml`, artifacts.yaml, 'text/yaml;charset=utf-8');
+  downloadTextFile(`${suggested}.js`, artifacts.js, 'application/javascript;charset=utf-8');
+  downloadTextFile(`${suggested}.py`, artifacts.py, 'text/x-python;charset=utf-8');
+    if (artifacts.playwrightJs) downloadTextFile(`${suggested}.playwright.js`, artifacts.playwrightJs, 'application/javascript;charset=utf-8');
+    if (artifacts.playwrightPy) downloadTextFile(`${suggested}.playwright.py`, artifacts.playwrightPy, 'text/x-python;charset=utf-8');
     // Silent success for fallback too
   }
 
@@ -2003,11 +2590,11 @@
       alert('No tool calls recorded for this server session yet.');
       return;
     }
-    const artifacts = generateWorkflowArtifacts(entry);
+    const artifacts = await generateWorkflowArtifacts(entry);
     await saveArtifactsViaDialog(artifacts);
   }
 
-  function generateCombinedWorkflowArtifacts(wf) {
+  async function generateCombinedWorkflowArtifacts(wf) {
     // Combine all calls from all servers in the workflow
     const calls = wf.calls || [];
     if (calls.length === 0) {
@@ -2018,10 +2605,226 @@
     const serverSpecs = new Map();
     const steps = [];
 
+    function normalizeSpec(spec) {
+      try {
+        if (!spec || typeof spec !== 'object') return spec;
+        const out = JSON.parse(JSON.stringify(spec || {}));
+        // Determine mode if missing
+        if (!out.mode) {
+          if (out.command) out.mode = 'stdio';
+          else if (out.url) out.mode = 'http';
+        }
+        // Ensure args is an array for stdio-like specs
+        if (out.mode === 'stdio') {
+          if (!out.command && out.npmPackage && typeof out.npmPackage === 'string') {
+            // support a non-standard field pointing to an npm package
+            out.command = 'npx';
+            out.args = out.args || ['-y', out.npmPackage];
+          }
+          if (out.args && !Array.isArray(out.args)) {
+            if (typeof out.args === 'string') out.args = out.args.split(/\s+/).filter(Boolean);
+            else out.args = [out.args];
+          }
+          out.args = out.args || [];
+        }
+        // Ensure env is an object
+        if (out.env && typeof out.env !== 'object') {
+          out.env = {};
+        }
+        return out;
+      } catch (err) {
+        console.warn('normalizeSpec failed', err);
+        return spec;
+      }
+    }
+
+  async function findSpecForServer(name) {
+      try {
+        // Try to match the server entry by a few heuristics:
+        //  - exact serverName or name (case-sensitive)
+        //  - case-insensitive match of name/serverName/displayName
+        //  - displayName contains provided name (loose match)
+        const normalize = (v) => (v === null || v === undefined) ? '' : String(v).trim().toLowerCase();
+        const wanted = normalize(name);
+        let entry = servers.find((s) => (s.serverName === name || s.name === name));
+        if (!entry) {
+          entry = servers.find((s) => {
+            return normalize(s.serverName) === wanted || normalize(s.name) === wanted || normalize(s.displayName) === wanted;
+          });
+        }
+        if (!entry) {
+          entry = servers.find((s) => {
+            const dn = normalize(s.displayName);
+            return dn && wanted && dn.indexOf(wanted) !== -1;
+          });
+        }
+        if (!entry) return null;
+        if (!entry) return null;
+
+        // Prefer an explicit spec object on the entry
+        if (entry.spec && Object.keys(entry.spec).length) {
+          const s = normalizeSpec(entry.spec);
+          console.debug('[EXPORT] findSpecForServer — using entry.spec for', name, s);
+          return s;
+        }
+
+        // Try already-parsed configEntry (set during replaceConfigServers)
+        if (entry.configEntry && typeof entry.configEntry === 'object') {
+          // Possible shapes:
+          // { spec: { ... } }
+          if (entry.configEntry.spec && typeof entry.configEntry.spec === 'object') {
+            const s = normalizeSpec(entry.configEntry.spec);
+            console.debug('[EXPORT] findSpecForServer — using entry.configEntry.spec for', name, s);
+            return s;
+          }
+          // { mcpServers: { <name>: { ... } } }
+          if (entry.configEntry.mcpServers && entry.configEntry.mcpServers[name]) {
+            const s = normalizeSpec(entry.configEntry.mcpServers[name]);
+            console.debug('[EXPORT] findSpecForServer — using entry.configEntry.mcpServers for', name, s);
+            return s;
+          }
+          // direct server key
+          if (entry.configEntry[name]) {
+            const s = normalizeSpec(entry.configEntry[name]);
+            console.debug('[EXPORT] findSpecForServer — using entry.configEntry[name] for', name, s);
+            return s;
+          }
+        }
+
+        // Fallback: check configSnippets (raw text snippets provided by the hosted config UI)
+        const snippets = entry.configSnippets || {};
+        if (snippets.json) {
+          try {
+            const parsed = JSON.parse(snippets.json);
+            // Parsed may be a wrapper: { spec: {...} }
+            if (parsed && typeof parsed === 'object') {
+              if (parsed.spec && typeof parsed.spec === 'object') {
+                const s = normalizeSpec(parsed.spec);
+                console.debug('[EXPORT] findSpecForServer — using snippets.json.spec for', name, s);
+                return s;
+              }
+              if (parsed.mcpServers && parsed.mcpServers[name]) {
+                const s = normalizeSpec(parsed.mcpServers[name]);
+                console.debug('[EXPORT] findSpecForServer — using snippets.json.mcpServers for', name, s);
+                return s;
+              }
+              if (parsed[name]) {
+                const s = normalizeSpec(parsed[name]);
+                console.debug('[EXPORT] findSpecForServer — using snippets.json[name] for', name, s);
+                return s;
+              }
+              // In some cases the snippet itself is the server spec
+              if (parsed.mode || parsed.command || parsed.url || parsed.args) {
+                const s = normalizeSpec(parsed);
+                console.debug('[EXPORT] findSpecForServer — using snippets.json direct spec for', name, s);
+                return s;
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to parse JSON config snippet for', name, err);
+          }
+        }
+
+        // Also consider entry.configSnippetValue which may contain the preferred-format snippet
+        if (entry.configSnippetValue) {
+          try {
+            const parsed = JSON.parse(entry.configSnippetValue);
+            if (parsed && typeof parsed === 'object') {
+              if (parsed.spec && typeof parsed.spec === 'object') {
+                const s = normalizeSpec(parsed.spec);
+                console.debug('[EXPORT] findSpecForServer — using configSnippetValue.spec for', name, s);
+                return s;
+              }
+              if (parsed.mcpServers && parsed.mcpServers[name]) {
+                const s = normalizeSpec(parsed.mcpServers[name]);
+                console.debug('[EXPORT] findSpecForServer — using configSnippetValue.mcpServers for', name, s);
+                return s;
+              }
+              if (parsed[name]) {
+                const s = normalizeSpec(parsed[name]);
+                console.debug('[EXPORT] findSpecForServer — using configSnippetValue[name] for', name, s);
+                return s;
+              }
+              if (parsed.mode || parsed.command || parsed.url || parsed.args) {
+                const s = normalizeSpec(parsed);
+                console.debug('[EXPORT] findSpecForServer — using configSnippetValue direct spec for', name, s);
+                return s;
+              }
+            }
+          } catch (err) {
+            // ignore parse errors
+          }
+        }
+
+        // If still nothing, try server-side parse of configSnippets or configSnippetValue
+        try {
+          const raw = (snippets.json || snippets.toml || entry.configSnippetValue || entry.configSnippet || '');
+          if (raw && String(raw).trim()) {
+            try {
+              const resp = await fetch('/api/export/parse-snippet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: raw }) });
+              const data = await resp.json().catch(() => ({}));
+              if (resp.ok && data && data.parsed) {
+                const parsed = data.parsed;
+                if (parsed && typeof parsed === 'object') {
+                  if (parsed.spec && typeof parsed.spec === 'object') {
+                    const s = normalizeSpec(parsed.spec);
+                    console.debug('[EXPORT] findSpecForServer — using parse-snippet.spec for', name, s);
+                    return s;
+                  }
+                  if (parsed.mcpServers && parsed.mcpServers[name]) {
+                    const s = normalizeSpec(parsed.mcpServers[name]);
+                    console.debug('[EXPORT] findSpecForServer — using parse-snippet.mcpServers for', name, s);
+                    return s;
+                  }
+                  if (parsed[name]) {
+                    const s = normalizeSpec(parsed[name]);
+                    console.debug('[EXPORT] findSpecForServer — using parse-snippet[name] for', name, s);
+                    return s;
+                  }
+                  if (parsed.mode || parsed.command || parsed.url || parsed.args) {
+                    const s = normalizeSpec(parsed);
+                    console.debug('[EXPORT] findSpecForServer — using parse-snippet direct spec for', name, s);
+                    return s;
+                  }
+                }
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+        } catch (_) {}
+
+        // As a last resort, check the global parsed config object (currentConfig)
+        try {
+          if (typeof currentConfig === 'object' && currentConfig) {
+            if (currentConfig.mcpServers && currentConfig.mcpServers[name]) {
+              const s = normalizeSpec(currentConfig.mcpServers[name]);
+              console.debug('[EXPORT] findSpecForServer — using currentConfig.mcpServers for', name, s);
+              return s;
+            }
+            if (Array.isArray(currentConfig.servers)) {
+              const found = currentConfig.servers.find(s => s.name === name || s.serverName === name);
+              if (found) {
+                const s = normalizeSpec(found);
+                console.debug('[EXPORT] findSpecForServer — using currentConfig.servers entry for', name, s);
+                return s;
+              }
+            }
+          }
+        } catch (_) {}
+
+        return null;
+      } catch (ex) {
+        console.error('findSpecForServer error for', name, ex);
+        return null;
+      }
+    }
+
     for (const call of calls) {
       const serverKey = call.serverName || 'unknown';
       if (!serverSpecs.has(serverKey)) {
-        serverSpecs.set(serverKey, call.spec || {});
+        const found = (call.spec && Object.keys(call.spec).length) ? normalizeSpec(call.spec) : (await findSpecForServer(serverKey) || {});
+        serverSpecs.set(serverKey, found);
       }
 
       steps.push({
@@ -2053,11 +2856,64 @@
       };
     });
 
-    // Convert server specs map to array for YAML
-    const servers = Array.from(serverSpecs.entries()).map(([name, spec]) => ({
+    // Convert server specs map to array for YAML (do NOT shadow the global `servers` variable)
+    const exportServers = Array.from(serverSpecs.entries()).map(([name, spec]) => ({
       name,
       spec
     }));
+
+    // Capture the UI server entries into a separate variable so we can look up raw snippets
+    const uiEntries = Array.isArray(servers) ? servers.slice() : [];
+
+    // Collect raw config snippets (as shown in UI) for each server and include them
+    const snippetParts = [];
+    for (const [name] of serverSpecs.entries()) {
+      const uiEntry = uiEntries.find(s => s.serverName === name || s.name === name || (s.displayName && String(s.displayName).indexOf(name) !== -1));
+      const raw = uiEntry && (uiEntry.configSnippetValue || uiEntry.configSnippet || (uiEntry.configSnippets && (uiEntry.configSnippets.json || uiEntry.configSnippets.toml))) || '';
+      if (raw && String(raw).trim()) {
+        snippetParts.push(`--- server: ${name} ---\n${raw}`);
+      }
+    }
+    const combinedRawSnippet = snippetParts.length ? snippetParts.join('\n\n') : '';
+    const snippetCommentYaml = combinedRawSnippet
+      ? ('# --- combined server config snippets (as shown in UI) ---\n' + combinedRawSnippet.split('\n').map(l => '# ' + l).join('\n') + '\n# --- end snippets ---\n\n')
+      : '';
+    const snippetCommentJs = combinedRawSnippet
+      ? ('/* --- combined server config snippets (as shown in UI) ---\n' + combinedRawSnippet + '\n--- end snippets --- */\n\n')
+      : '';
+    const snippetCommentPy = combinedRawSnippet
+      ? ('""" --- combined server config snippets (as shown in UI) ---\n' + combinedRawSnippet + '\n--- end snippets --- """\n\n')
+      : '';
+
+    // If a Playwright Codegen recording exists in the UI entries, include it as
+    // an executable step and prepare companion script artifacts.
+  let playwrightRecordingJsContent = '';
+  let playwrightRecordingPyContent = '';
+  const codegenEntry = uiEntries.find(e => e.isPlaywrightCodegen || (e.serverName && String(e.serverName).toLowerCase().indexOf('playwright') !== -1 && e.source === 'internal'));
+    // Ensure Playwright Codegen appears in the serverSpecs for exports even if
+    // no workflow calls referenced it. This makes the codegen server always
+    // available in export lists and enables inclusion of recorded scripts.
+    if (codegenEntry) {
+      const name = codegenEntry.serverName || codegenEntry.name || 'playwright-codegen';
+      if (!serverSpecs.has(name)) {
+        serverSpecs.set(name, { mode: 'codegen', url: codegenEntry.playwrightUrl || window.location.origin });
+      }
+    }
+    if (codegenEntry && codegenEntry.playwrightRecordingJs && String(codegenEntry.playwrightRecordingJs).trim()) {
+      // Prepend a step that indicates the recorded script should be executed
+      prettySteps.unshift({ action: 'execute_playwright_recording', server: codegenEntry.serverName || codegenEntry.displayName || 'playwright-codegen', tool: '__playwright_recording__', args: {} });
+      // Prepare a standalone Node script that runs the Playwright recording
+      const userJs = String(codegenEntry.playwrightRecordingJs || '').trim();
+      playwrightRecordingJsContent = `// Playwright recording for workflow\nconst { chromium } = require('playwright');\n(async () => {\n  const browser = await chromium.launch();\n  const page = await browser.newPage();\n  try {\n${userJs.split('\n').map(l => '    ' + l).join('\n')}\n  } finally {\n    await browser.close();\n  }\n})();\n`;
+      // Minimal Python recording wrapper (if user provided a Python snippet, prefer it)
+      const userPy = String(codegenEntry.playwrightRecordingPy || '').trim();
+      if (userPy) {
+        playwrightRecordingPyContent = `# Playwright recording (Python)\nfrom playwright.async_api import async_playwright\nimport asyncio\n\nasync def execute_playwright_recording():\n${userPy.split('\n').map(l => '    ' + l).join('\n')}\n\nif __name__ == '__main__':\n    asyncio.run(execute_playwright_recording())\n`;
+      } else {
+        // If no Python provided, create a small shim that calls node script via subprocess
+        playwrightRecordingPyContent = `# Playwright recording shim (calls Node script)\nimport subprocess\nimport sys\nsubprocess.check_call(['node', __file__.replace('.py', '.playwright.js')])\n`;
+      }
+    }
 
     const workflow = {
       version: 1,
@@ -2066,18 +2922,19 @@
       steps: prettySteps
     };
 
-    const yaml = toSingleQuotedYAML(workflow) + '\n';
+  const yaml = `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` + snippetCommentYaml + toSingleQuotedYAML(workflow) + '\n';
     const baseName = `MCP_Workflow_${formatTimestampForFilename(new Date())}`;
 
     // Generate JavaScript replay script
-    const js = `/* Generated by MCP Diagnosis Tool: Multi-server workflow replay */\n` +
+    const js = snippetCommentJs + `/* Generated by MCP Diagnosis Tool: Multi-server workflow replay (v ${APP_VERSION}) */\n` +
+  `// Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` +
   `// Requires: npm i @modelcontextprotocol/sdk\n` +
   `const { Client } = require('@modelcontextprotocol/sdk/client/index.js');\n` +
   `const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');\n` +
   `const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');\n` +
   `const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');\n` +
   `\n` +
-  `const servers = ${JSON.stringify(servers, null, 2)};\n` +
+  `const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
   `const steps = ${JSON.stringify(steps, null, 2)};\n` +
   `\n` +
   `const clients = new Map();\n` +
@@ -2162,7 +3019,8 @@
   `run().catch(err => { console.error('Run failed:', err); process.exit(1); });\n`;
 
     // Generate Python replay script
-    const py = `# Generated by MCP Diagnosis Tool: Multi-server workflow replay\n` +
+    const py = `# Generated by MCP Diagnosis Tool: Multi-server workflow replay (v ${APP_VERSION})\n` +
+  `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` +
   `# Requires: pip install mcp\n` +
   `import asyncio, json\n` +
   `from contextlib import AsyncExitStack\n` +
@@ -2242,7 +3100,64 @@
   `if __name__ == '__main__':\n` +
   `    asyncio.run(main())\n`;
 
-    return { yaml, js, py, baseName };
+    // Build API-oriented artifacts for the combined workflow
+    // Use the exportServers array (name/spec pairs) and steps determined above.
+    const apiYamlObj = {
+      exported_with: `MCP Diagnosis Tool v ${APP_VERSION}`,
+      servers: exportServers,
+      steps: prettySteps
+    };
+    const apiYamlCombined = `# API replay manifest for MCP Diagnosis Tool v ${APP_VERSION}\n` + toSingleQuotedYAML(apiYamlObj) + '\n';
+
+    const apiJsCombined = snippetCommentJs + `// API replay script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
+      `// Usage: node ${baseName}.api.js http://localhost:3060\n` +
+      `const fetch = require('node-fetch');\n` +
+      `(async function(){\n` +
+      `  const base = process.argv[2] || 'http://localhost:3060';\n` +
+      `  const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
+      `  const steps = ${JSON.stringify(prettySteps, null, 2)};\n` +
+      `  const sessions = {};\n` +
+      `  for (const s of servers) {\n` +
+      `    const resp = await fetch(base + '/api/sessions/open', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ spec: s.spec }) });\n` +
+      `    const j = await resp.json(); if (!j.sessionId) { console.error('Failed to open session for', s.name, j); process.exit(2); }\n` +
+      `    sessions[s.name] = j.sessionId; console.log('Opened', s.name, j.sessionId);\n` +
+      `  }\n` +
+      `  for (const step of steps) {\n` +
+      `    const sid = sessions[step.server]; if (!sid) { console.error('No session for', step.server); continue; }\n` +
+      `    console.log('Calling', step.tool, 'on', step.server);\n` +
+      `    const call = await fetch(base + '/api/tools/call', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid, tool: step.tool, args: step.args || {} }) });\n` +
+      `    const out = await call.json().catch(() => null); console.log('Result', out);\n` +
+      `  }\n` +
+      `  for (const [name, sid] of Object.entries(sessions)) {\n` +
+      `    await fetch(base + '/api/sessions/close', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid }) });\n` +
+      `    console.log('Closed', name);\n` +
+      `  }\n` +
+      `})();\n`;
+
+    const apiPsCombined = snippetCommentPy + `# API replay PowerShell script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
+      `# Usage: powershell -File ${baseName}.api.ps -BaseUrl http://localhost:3060\n` +
+      `$BaseUrl = $args[0]; if (-not $BaseUrl) { $BaseUrl = 'http://localhost:3060' }\n` +
+      `$servers = ${JSON.stringify(exportServers, null, 2)}\n` +
+      `foreach ($s in $servers) {\n` +
+      `  Write-Host "Opening session for $($s.name) via $BaseUrl"\n` +
+      `  $resp = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/open') -ContentType 'application/json' -Body (ConvertTo-Json @{ spec = $s.spec } -Depth 10)\n` +
+      `  if (-not $resp.sessionId) { Write-Error "Failed to open session for $($s.name): $($resp | ConvertTo-Json -Depth 5)" ; exit 2 }\n` +
+      `  $sessions[$s.name] = $resp.sessionId\n` +
+      `}\n` +
+      `# Example call loop (adjust as needed)\n` +
+      `foreach ($step in ${JSON.stringify(prettySteps, null, 2)}) {\n` +
+      `  $sid = $sessions[$step.server]; if (-not $sid) { Write-Host "No session for $($step.server)"; continue }\n` +
+      `  Write-Host "Calling $($step.tool) on $($step.server)"\n` +
+      `  $call = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/tools/call') -ContentType 'application/json' -Body (ConvertTo-Json @{ sessionId = $sid; tool = $step.tool; args = $step.args } -Depth 10)\n` +
+      `  Write-Host "Result: $($call | ConvertTo-Json -Depth 5)"\n` +
+      `}\n` +
+      `# Close sessions\n` +
+      `foreach ($name in $sessions.Keys) {\n` +
+      `  Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/close') -ContentType 'application/json' -Body (ConvertTo-Json @{ sessionId = $sessions[$name] } -Depth 5)\n` +
+      `  Write-Host "Closed $name"\n` +
+      `}\n`;
+
+    return { yaml, js, py, apiYaml: apiYamlCombined, apiJs: apiJsCombined, apiPs: apiPsCombined, baseName, playwrightJs: playwrightRecordingJsContent, playwrightPy: playwrightRecordingPyContent };
   }
 
 

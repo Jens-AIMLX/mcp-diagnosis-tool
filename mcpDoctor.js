@@ -512,8 +512,21 @@ function normalizeMcpConfig(parsed, { format }) {
   const topLevel = deepClone(parsed);
 
   if (format === 'json') {
-    // Allow both mcpServers and mcp_servers just in case.
-    const serversNode = parsed.mcpServers ?? parsed.mcp_servers;
+    // Allow both mcpServers and mcp_servers just in case. Also accept a legacy
+    // top-level `servers` array where entries may include a `name` field.
+    let serversNode = parsed.mcpServers ?? parsed.mcp_servers;
+    if ((!serversNode || typeof serversNode !== 'object' || Array.isArray(serversNode)) && Array.isArray(parsed.servers)) {
+      // Convert array form to a name->object map. Use explicit `name` if present,
+      // otherwise generate a stable fallback name.
+      serversNode = {};
+      for (let i = 0; i < parsed.servers.length; i += 1) {
+        const item = parsed.servers[i];
+        if (!item || typeof item !== 'object') continue;
+        const name = (typeof item.name === 'string' && item.name.trim()) ? item.name.trim() : `server_${i + 1}`;
+        // Avoid overwriting an existing named entry
+        if (!serversNode[name]) serversNode[name] = item;
+      }
+    }
     if (!serversNode || typeof serversNode !== 'object' || Array.isArray(serversNode)) {
       const error = new Error('mcp.json must contain an "mcpServers" object with named entries.');
       error.code = 'CONFIG_SCHEMA_ERROR';

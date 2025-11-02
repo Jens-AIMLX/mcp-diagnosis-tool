@@ -3,14 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MCP Diagnosis Tool</title>
+    <title>MCP Diagnosis Tool 1.2</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <header class="page-header">
       <div class="header-left">
-        <h1>MCP Diagnosis Tool</h1>
-        <p class="subtitle">Inspect and debug your Model Context Protocol (MCP) servers with ease.</p>
+  <h1>MCP Diagnosis Tool</h1>
+  <p class="subtitle">Inspect and debug your Model Context Protocol (MCP) servers with ease.</p>
+  <div id="app-version" class="app-version">v 1.2.1.4.1</div>
       </div>
       <a id="back-to-test-portal" class="portal-return-link" href="http://localhost:3055/">← Back to Test Portal</a>
     </header>
@@ -218,6 +219,21 @@
         </div>
         <div class="modal-actions">
           <button type="button" id="config-modal-merge">Merge</button>
+        </div>
+      </div>
+    </div>
+    <!-- Export filename modal -->
+    <div id="export-filename-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="export-filename-title">
+      <div class="modal-content">
+        <button type="button" class="modal-close" id="export-filename-close" aria-label="Close">×</button>
+        <h3 id="export-filename-title">Export workflow — choose filename</h3>
+        <div class="modal-body">
+          <p class="modal-note">Choose a base filename (extensions will be added automatically):</p>
+          <input id="export-filename-input" class="modal-input" type="text" style="width:100%;" />
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="export-filename-save">Pick folder & Save</button>
+          <button type="button" id="export-filename-cancel" class="secondary">Cancel</button>
         </div>
       </div>
     </div>
