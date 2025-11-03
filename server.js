@@ -11,6 +11,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const JSZip = require('jszip');
 const { log, logError, logWithTruncation, LOG_PATH, getRecent, attachConsoleInterceptors, detachConsoleFile, rotateConsoleFile, startRolling24Hours, getNextRotationTs } = require('./logger');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -158,8 +159,8 @@ try {
   process.env.APP_VERSION = process.env.APP_VERSION || 'dev';
 }
 
-// Enable JSON body parsing
-app.use(express.json());
+// Enable JSON body parsing (increase limit to handle large workflow manifests)
+app.use(express.json({ limit: '10mb' }));
 // Allow cross‑origin requests in case the UI is served from a different host
 app.use(cors());
 // Attach console/stdout/stderr to managed server.log stream (allows rotate/detach)
@@ -551,6 +552,67 @@ app.post('/api/export/from-snippet', (req, res) => {
   } catch (err) {
     logError('export_from_snippet_error', err);
     res.status(500).json({ ok: false, error: { details: err.message } });
+  }
+});
+
+// Save exported workflow artifacts into a server-side folder with proper subdirectories
+// Body: { baseName: string, targets: [{ name: 'MCPflow/..'|'APIflow/..'|'json/..', content: string, mime?: string }] }
+// Returns: { ok: true, folder: relativePath, absoluteFolder: string, files: string[] }
+app.post('/api/export/save', (req, res) => {
+  try {
+    const { baseName, targets } = req.body || {};
+    if (!baseName || !Array.isArray(targets) || !targets.length) {
+      return res.status(400).json({ ok: false, error: { details: 'baseName and targets array are required' } });
+    }
+    const rootDir = path.join(__dirname, 'imports', 'exports', String(baseName));
+    try { fs.mkdirSync(rootDir, { recursive: true }); } catch (_) {}
+    const written = [];
+    for (const t of targets) {
+      if (!t || typeof t.name !== 'string' || typeof t.content !== 'string') continue;
+      // Normalize and ensure path stays within rootDir
+      const safeName = t.name.replace(/\\/g, '/');
+      if (safeName.includes('..')) {
+        return res.status(400).json({ ok: false, error: { details: 'Invalid file path' } });
+      }
+      const absPath = path.join(rootDir, safeName);
+      const dir = path.dirname(absPath);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(absPath, t.content, { encoding: 'utf8' });
+      written.push(absPath);
+    }
+    return res.json({ ok: true, folder: path.join('imports', 'exports', String(baseName)), absoluteFolder: rootDir, files: written });
+  } catch (err) {
+    logError('export_save_error', err);
+    return res.status(500).json({ ok: false, error: { details: err.message } });
+  }
+});
+
+// Build a ZIP of export artifacts and return it to the browser
+// Body: { baseName: string, targets: [{ name, content, mime? }] }
+app.post('/api/export/zip', async (req, res) => {
+  try {
+    const { baseName, targets } = req.body || {};
+    if (!baseName || !Array.isArray(targets) || !targets.length) {
+      return res.status(400).json({ ok: false, error: { details: 'baseName and targets array are required' } });
+    }
+    const zip = new JSZip();
+    for (const t of targets) {
+      if (!t || typeof t.name !== 'string' || typeof t.content !== 'string') continue;
+      const name = t.name.replace(/\\/g, '/');
+      if (name.includes('..')) {
+        return res.status(400).json({ ok: false, error: { details: 'Invalid file path' } });
+      }
+      zip.file(name, t.content);
+    }
+    const buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+    const fileName = `${String(baseName)}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', String(buf.length));
+    return res.end(buf);
+  } catch (err) {
+    logError('export_zip_error', err);
+    return res.status(500).json({ ok: false, error: { details: err.message } });
   }
 });
 

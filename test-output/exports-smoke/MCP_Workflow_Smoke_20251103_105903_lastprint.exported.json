@@ -1,0 +1,13 @@
+{
+  "exported_at": "2025-11-03T09:59:03.600Z",
+  "servers": [],
+  "steps": [
+    {
+      "server": "s",
+      "tool": "t",
+      "result": {
+        "hello": "world"
+      }
+    }
+  ]
+}

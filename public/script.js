@@ -312,50 +312,93 @@
       btnExportWorkflow.addEventListener('click', async () => {
         const wf = workflowSession || getOrStartWorkflow();
         if (!wf.calls || wf.calls.length === 0) {
-          alert('No workflow calls recorded yet.');
-          return;
+          console.warn('No workflow calls recorded yet — exporting empty workflow');
         }
         try {
           const artifacts = await generateCombinedWorkflowArtifacts(wf);
           const suggestedBase = artifacts.baseName || 'mcp_session';
 
-          // If folder picking is supported, open modal to collect filename then call picker
-          if (window.showDirectoryPicker) {
-            openExportFilenameModal(suggestedBase, async (chosenBase) => {
-              try {
-                showExportStatus('Opening folder picker...');
-                const dirHandle = await window.showDirectoryPicker();
-                const targets = [
-                  { name: `${chosenBase}.yaml`, content: artifacts.yaml },
-                  { name: `${chosenBase}.js`, content: artifacts.js },
-                  { name: `${chosenBase}.py`, content: artifacts.py }
-                ];
-                for (const t of targets) {
-                  const fh = await dirHandle.getFileHandle(t.name, { create: true });
-                  const w = await fh.createWritable();
-                  await w.write(t.content);
-                  await w.close();
-                }
-                showExportStatus('Export saved to folder');
-              } catch (err) {
-                console.error('Folder-picker export failed or was cancelled, falling back:', err);
-                showExportStatus('Folder pick cancelled — falling back to file save', 3000);
-                // fallback to existing save flow
-                await saveArtifactsViaDialog(artifacts);
+          // Reactivated: Export via server endpoints (no browser folder picker, no dialog fallback)
+          openExportFilenameModal(suggestedBase, async (chosenBase) => {
+            try {
+              if (chosenBase && typeof chosenBase === 'string') {
+                artifacts.baseName = chosenBase;
+                // Also update target file names to reflect the chosen base
+                artifacts.targets = (artifacts.targets || []).map(t => {
+                  const parts = t.name.split('/');
+                  const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+                  const leaf = parts[parts.length - 1];
+                  let newLeaf;
+                  if (/\.api\.ya?ml$/i.test(leaf)) newLeaf = `${chosenBase}.api.yaml`;
+                  else if (/\.api\.js$/i.test(leaf)) newLeaf = `${chosenBase}.api.js`;
+                  else if (/\.api\.py$/i.test(leaf)) newLeaf = `${chosenBase}.api.py`;
+                  else if (/\.ya?ml$/i.test(leaf)) newLeaf = `${chosenBase}.yaml`;
+                  else if (/\.js$/i.test(leaf)) newLeaf = `${chosenBase}.js`;
+                  else if (/\.py$/i.test(leaf)) newLeaf = `${chosenBase}.py`;
+                  else if (/\.json$/i.test(leaf)) newLeaf = `${chosenBase}.json`;
+                  else newLeaf = leaf;
+                  return { ...t, name: (dir ? dir + '/' : '') + newLeaf };
+                });
               }
-            }, () => {
-              // cancelled modal; do nothing
-            });
-            return;
-          }
-
-          // Fallback: use existing save flow (no folder picker available)
-          await saveArtifactsViaDialog(artifacts);
+              await saveArtifactsServerSide(artifacts, { downloadZip: true });
+            } catch (err) {
+              console.error('Server-side export failed:', err);
+              alert('Export failed: ' + (err?.message || String(err)));
+            }
+          }, () => {
+            // cancelled modal; do nothing
+          });
+          return;
         } catch (e) {
           console.error('Workflow export failed:', e);
           alert(`Workflow export failed: ${e.message || e}`);
         }
       });
+    }
+
+    // Reactivated helper: save artifacts on server and optionally download a ZIP
+    async function saveArtifactsServerSide(artifacts, options = {}) {
+      const { downloadZip = true } = options;
+      try {
+        if (typeof showExportStatus === 'function') showExportStatus('Saving export on server...');
+        const saveRes = await fetch('/api/export/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ baseName: artifacts.baseName, targets: artifacts.targets }),
+        });
+        if (!saveRes.ok) {
+          const txt = await saveRes.text().catch(() => '');
+          throw new Error(`Server save failed (${saveRes.status}): ${txt}`);
+        }
+        if (typeof showExportStatus === 'function') showExportStatus('Export saved on server');
+
+        if (downloadZip) {
+          if (typeof showExportStatus === 'function') showExportStatus('Preparing ZIP...');
+          const zipRes = await fetch('/api/export/zip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // Server expects both baseName and targets to build the ZIP from provided content
+            body: JSON.stringify({ baseName: artifacts.baseName, targets: artifacts.targets }),
+          });
+          if (!zipRes.ok) {
+            const ztxt = await zipRes.text().catch(() => '');
+            throw new Error(`ZIP creation failed (${zipRes.status}): ${ztxt}`);
+          }
+          const blob = await zipRes.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${artifacts.baseName}.zip`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          if (typeof showExportStatus === 'function') showExportStatus('ZIP downloaded');
+        }
+      } catch (err) {
+        if (typeof showExportStatus === 'function') showExportStatus('Export failed');
+        throw err;
+      }
     }
 	  if (btnCloseAllSessions) {
 	    btnCloseAllSessions.addEventListener('click', async () => {
@@ -614,6 +657,10 @@
     }
   }
 
+  // Note: No fallback save is allowed. Export requires folder picker support.
+
+  // Note: Server-assisted save/zip has been disabled per policy.
+
   /**
    * Deep parse JSON strings that may contain nested escaped JSON.
    * This handles cases where MCP tools return JSON with escaped newlines like "{\n  \"key\": \"value\"\n}"
@@ -818,6 +865,442 @@
     const disabled = !currentConfig || isLoadingConfig;
     saveJsonButton.disabled = disabled;
     saveTomlButton.disabled = disabled;
+  }
+
+  // Helper to derive an exportable spec for a server entry (avoids empty {})
+  async function _getExportableSpecForEntry(e) {
+    try {
+      if (e && e.spec && typeof e.spec === 'object' && Object.keys(e.spec).length) {
+        return JSON.parse(JSON.stringify(e.spec));
+      }
+      if (e && e.configEntry && typeof e.configEntry === 'object') {
+        if (e.configEntry.spec && typeof e.configEntry.spec === 'object' && Object.keys(e.configEntry.spec).length) {
+          return JSON.parse(JSON.stringify(e.configEntry.spec));
+        }
+        const ce = e.configEntry;
+        if (ce.url || ce.command || ce.mode) {
+          return JSON.parse(JSON.stringify(ce));
+        }
+      }
+      const snippet = (e && (e.configSnippetValue || e.configSnippet)) || '';
+      if (typeof snippet === 'string' && snippet.trim()) {
+        try {
+          const parsed = JSON.parse(snippet);
+          if (parsed && typeof parsed === 'object') {
+            if (parsed.spec && typeof parsed.spec === 'object' && Object.keys(parsed.spec).length) return parsed.spec;
+            if (parsed.url || parsed.command || parsed.mode) return parsed;
+          }
+        } catch (_) {
+          try {
+            const resp = await fetch('/api/export/parse-snippet', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: snippet })
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok && data && data.parsed) {
+              const parsed = data.parsed;
+              if (parsed && typeof parsed === 'object') {
+                if (parsed.spec && typeof parsed.spec === 'object' && Object.keys(parsed.spec).length) return parsed.spec;
+                if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
+                  const key = e.serverName || e.name;
+                  if (key && parsed.mcpServers[key]) return parsed.mcpServers[key];
+                }
+                if (parsed.url || parsed.command || parsed.mode) return parsed;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+      if (typeof currentConfig === 'object' && currentConfig) {
+        if (Array.isArray(currentConfig.servers)) {
+          const found = currentConfig.servers.find((s) => (s.name === (e.serverName || e.name) || s.serverName === (e.serverName || e.name)));
+          if (found) {
+            if (found.spec && typeof found.spec === 'object' && Object.keys(found.spec).length) return JSON.parse(JSON.stringify(found.spec));
+            if (found.url || found.command || found.mode) return JSON.parse(JSON.stringify(found));
+          }
+        }
+        if (currentConfig.mcpServers && typeof currentConfig.mcpServers === 'object') {
+          const key = e.serverName || e.name;
+          if (key && currentConfig.mcpServers[key]) {
+            const found = currentConfig.mcpServers[key];
+            if (found.spec && typeof found.spec === 'object' && Object.keys(found.spec).length) return JSON.parse(JSON.stringify(found.spec));
+            if (found.url || found.command || found.mode) return JSON.parse(JSON.stringify(found));
+          }
+        }
+      }
+      return {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // Generate combined workflow artifacts (YAML/JS/PY plus API variants), including runtime JSON writing in scripts
+  async function generateCombinedWorkflowArtifacts(wf) {
+    const calls = Array.isArray(wf?.calls) ? wf.calls.slice() : [];
+    // Allow empty workflows: generate artifacts with zero steps
+    // Collect servers involved
+    const byName = new Map();
+    for (const c of calls) {
+      const name = c.serverName || 'server';
+      if (!byName.has(name)) {
+        // find matching entry
+        const entry = servers.find(s => (s.serverName === name) || (s.name === name) || (s.id && c.serverId && s.id === c.serverId));
+        byName.set(name, entry || null);
+      }
+    }
+    // Build export servers and snippet comment
+    const exportServers = [];
+    let snippetCommentYaml = '';
+    let snippetCommentJs = '';
+    let snippetCommentPy = '';
+    if (byName.size) {
+      const partsYaml = ['# --- combined server config snippets (as shown in UI) ---'];
+      const partsJs = ['/* --- combined server config snippets (as shown in UI) ---'];
+      const partsPy = ['""" --- combined server config snippets (as shown in UI) ---'];
+      for (const [name, entry] of byName) {
+        let spec = {};
+        if (entry) spec = await _getExportableSpecForEntry(entry);
+        exportServers.push({ name, spec });
+        const rawSnippet = (entry && (entry.configSnippetValue || entry.configSnippet)) || (entry && entry.configSnippets && (entry.configSnippets.json || entry.configSnippets.toml)) || '';
+        if (rawSnippet) {
+          partsYaml.push(`# --- server: ${name} ---`);
+          partsJs.push(`--- server: ${name} ---`);
+          partsPy.push(`--- server: ${name} ---`);
+          const lines = String(rawSnippet).split('\n');
+          for (const ln of lines) {
+            partsYaml.push('# ' + ln);
+            partsJs.push(ln);
+            partsPy.push(ln);
+          }
+        }
+      }
+      partsYaml.push('# --- end snippets ---');
+      partsJs.push('--- end snippets --- */');
+      partsPy.push('--- end snippets --- """');
+      snippetCommentYaml = partsYaml.join('\n') + '\n\n';
+      snippetCommentJs = partsJs.join('\n') + '\n\n';
+      snippetCommentPy = partsPy.join('\n') + '\n\n';
+    }
+
+    // Steps in combined format
+    const prettySteps = calls.map((s) => ({
+      server: s.serverName || 'server',
+      tool: s.toolName,
+      args: s.args || {},
+      keep_session_open: !!s.keepSessionOpen,
+      started_at: s.startedAt || null,
+      finished_at: s.finishedAt || null,
+      ok: !!s.success,
+      warmup: !!s.warmup
+    }));
+
+    // YAML minimal manifest (no results), single-quoted scalars
+    const yamlObj = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      servers: exportServers,
+      steps: prettySteps
+    };
+    const yaml = `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` + snippetCommentYaml + toSingleQuotedYAML(yamlObj) + '\n';
+
+    // Base name for files
+    const firstServer = [...byName.keys()][0] || 'workflow';
+    const baseName = `MCP_Workflow_${sanitizeFilenameSegment(firstServer)}_${formatTimestampForFilename(new Date())}`;
+
+    // Build non-executable JSON manifest with full results if present in workflow calls
+    const jsonManifestObj = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      servers: exportServers,
+      steps: (calls || []).map(c => ({
+        server: c.serverName || 'server',
+        tool: c.toolName,
+        args: c.args || {},
+        keep_session_open: !!c.keepSessionOpen,
+        started_at: c.startedAt || null,
+        finished_at: c.finishedAt || null,
+        ok: !!c.success,
+        warmup: !!c.warmup,
+        response: c.response !== undefined ? c.response : null
+      }))
+    };
+    const jsonManifest = JSON.stringify(jsonManifestObj, null, 2);
+
+    // Direct JS (exact file-creator style + runtime JSON results and last-print)
+    const js = `${snippetCommentJs}` +
+`/* Generated by MCP Diagnosis Tool: Multi-server workflow replay (v ${APP_VERSION}) */\n` +
+`// Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` +
+`// Requires: npm i @modelcontextprotocol/sdk\n` +
+`const { Client } = require('@modelcontextprotocol/sdk/client/index.js');\n` +
+`const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');\n` +
+`const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');\n` +
+`const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');\n\n` +
+`const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
+`const steps = ${JSON.stringify(prettySteps, null, 2)};\n\n` +
+`const clients = new Map();\n` +
+`const __MCP_export_results__ = [];\n\n` +
+`function toJsonable(x){\n` +
+`  if (x == null) return x;\n` +
+`  const t = typeof x;\n` +
+`  if (t === 'string' || t === 'number' || t === 'boolean') return x;\n` +
+`  if (Array.isArray(x)) return x.map(toJsonable);\n` +
+`  if (t === 'object') {\n` +
+`    if (x.type && (x.text !== undefined || x.data !== undefined || x.mimeType !== undefined || x.name !== undefined || x.error !== undefined || x.url !== undefined || x.path !== undefined)) {\n` +
+`      const out = { type: x.type };\n` +
+`      for (const k of ['text','data','mimeType','name','error','url','path']) { if (Object.prototype.hasOwnProperty.call(x, k)) out[k] = toJsonable(x[k]); }\n` +
+`      return out;\n` +
+`    }\n` +
+`    const out = {}; for (const [k, v] of Object.entries(x)) out[k] = toJsonable(v); return out;\n` +
+`  }\n` +
+`  return String(x);\n` +
+`}\n\n` +
+`async function getClient(serverName) {\n` +
+`  if (clients.has(serverName)) return clients.get(serverName);\n` +
+`  const serverDef = servers.find(s => s.name === serverName);\n` +
+`  if (!serverDef) throw new Error('Unknown server: ' + serverName);\n` +
+`  const spec = serverDef.spec;\n` +
+`  const client = new Client({ name: 'mcp-workflow-replay', version: '1.0.0' });\n` +
+`  if (spec.mode === 'stdio') {\n` +
+`    const transport = new StdioClientTransport({\n` +
+`      command: spec.command,\n` +
+`      args: spec.args || [],\n` +
+`      env: spec.env || {},\n` +
+`      cwd: spec.cwd,\n` +
+`      stderr: spec.stderr\n` +
+`    });\n` +
+`    await client.connect(transport);\n` +
+`  } else if (spec.mode === 'http') {\n` +
+`    const url = new URL(spec.url);\n` +
+`    try {\n` +
+`      const http = new StreamableHTTPClientTransport(url);\n` +
+`      await client.connect(http);\n` +
+`    } catch (_) {\n` +
+`      const sse = new SSEClientTransport(url);\n` +
+`      await client.connect(sse);\n` +
+`    }\n` +
+`  } else {\n` +
+`    throw new Error('Unknown spec.mode: ' + spec.mode);\n` +
+`  }\n` +
+`  clients.set(serverName, client);\n` +
+`  return client;\n` +
+`}\n\n` +
+`async function closeClient(serverName) {\n` +
+`  const client = clients.get(serverName);\n` +
+`  if (client) {\n` +
+`    try { await client.close(); } catch {}\n` +
+`    clients.delete(serverName);\n` +
+`  }\n` +
+`}\n\n` +
+`async function closeAllClients() {\n` +
+`  for (const [name] of clients) {\n` +
+`    await closeClient(name);\n` +
+`  }\n` +
+`}\n\n` +
+`async function run() {\n` +
+`  try {\n` +
+`    for (const s of steps) {\n` +
+`      const client = await getClient(s.server);\n` +
+`      const result = await client.callTool({ name: s.tool, arguments: s.args || {} });\n` +
+`      const payload = (result && (result.content ?? result)) ?? null;\n` +
+`      const jsonable = toJsonable(payload);\n` +
+`      console.log('[' + s.server + '] tool', s.tool, '->\\n' + JSON.stringify(jsonable, null, 2));\n` +
+`      __MCP_export_results__.push({ server: s.server, tool: s.tool, args: s.args || {}, ok: true, result: jsonable });\n` +
+`      if (!s.keep_session_open) {\n` +
+`        await closeClient(s.server);\n` +
+`      }\n` +
+`    }\n` +
+`  } finally {\n` +
+`    await closeAllClients();\n` +
+`    try {\n` +
+`      const fs = require('fs');\n` +
+`      fs.writeFileSync('${baseName}.exported.json', JSON.stringify({ exported_at: new Date().toISOString(), servers, steps: __MCP_export_results__ }, null, 2));\n` +
+`      if (__MCP_export_results__.length) {\n` +
+`        console.log(JSON.stringify(__MCP_export_results__[__MCP_export_results__.length-1].result, null, 2));\n` +
+`      }\n` +
+`    } catch (e) { /* ignore */ }\n` +
+`  }\n` +
+`}\n\n` +
+`run().catch(err => { console.error('Run failed:', err); process.exit(1); });\n`;
+
+    // Direct Python (multi-server, sessions per server, runtime JSON + last print)
+    const py = `${snippetCommentPy}` +
+`# Generated by MCP Diagnosis Tool: Multi-server workflow replay (v ${APP_VERSION})\n` +
+`# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` +
+`# Requires: pip install mcp\n` +
+`import asyncio, json\n` +
+`from contextlib import AsyncExitStack\n` +
+`from mcp import ClientSession\n` +
+`from mcp.client.stdio import stdio_client, StdioServerParameters\n` +
+`from mcp.client.streamable_http import streamablehttp_client\n\n` +
+`servers = ${JSON.stringify(exportServers, null, 2)}\n` +
+`steps = ${JSON.stringify(prettySteps, null, 2)}\n\n` +
+`sessions = {}\n` +
+`exit_stack = AsyncExitStack()\n` +
+`__MCP_export_results__ = []\n\n` +
+`def to_jsonable(x):\n` +
+`    import dataclasses\n` +
+`    if x is None or isinstance(x, (str, int, float, bool)):\n` +
+`        return x\n` +
+`    if isinstance(x, (list, tuple)):\n` +
+`        return [to_jsonable(i) for i in x]\n` +
+`    if isinstance(x, dict):\n` +
+`        return {str(k): to_jsonable(v) for k, v in x.items()}\n` +
+`    t = getattr(x, 'type', None)\n` +
+`    if t:\n` +
+`        out = {'type': t}\n` +
+`        for attr in ('text','data','mimeType','name','error','url','path'):\n` +
+`            if hasattr(x, attr):\n` +
+`                out[attr] = getattr(x, attr)\n` +
+`        return out\n` +
+`    if dataclasses.is_dataclass(x):\n` +
+`        return to_jsonable(dataclasses.asdict(x))\n` +
+`    d = getattr(x, '__dict__', None)\n` +
+`    if d is not None:\n` +
+`        return {k: to_jsonable(v) for k, v in d.items()}\n` +
+`    return str(x)\n\n` +
+`async def get_session(server_name):\n` +
+`    if server_name in sessions:\n` +
+`        return sessions[server_name]\n` +
+`    server_def = next((s for s in servers if s['name'] == server_name), None)\n` +
+`    if not server_def:\n` +
+`        raise ValueError(f'Unknown server: {server_name}')\n` +
+`    spec = server_def['spec']\n` +
+`    await exit_stack.__aenter__()\n` +
+`    if spec.get('mode') == 'stdio':\n` +
+`        params = StdioServerParameters(command=spec.get('command'), args=spec.get('args') or [], env=spec.get('env') or None)\n` +
+`        read, write = await exit_stack.enter_async_context(stdio_client(params))\n` +
+`        sess = await exit_stack.enter_async_context(ClientSession(read, write))\n` +
+`    elif spec.get('mode') == 'http':\n` +
+`        url = spec.get('url')\n` +
+`        read, write = await exit_stack.enter_async_context(streamablehttp_client(url))\n` +
+`        sess = await exit_stack.enter_async_context(ClientSession(read, write))\n` +
+`    else:\n` +
+`        raise ValueError(f"Unknown mode: {spec.get('mode')}")\n` +
+`    sessions[server_name] = sess\n` +
+`    return sess\n\n` +
+`async def close_session(server_name):\n` +
+`    if server_name in sessions:\n` +
+`        del sessions[server_name]\n` +
+`\n` +
+`async def close_all_sessions():\n` +
+`    sessions.clear()\n` +
+`    await exit_stack.__aexit__(None, None, None)\n` +
+`\n` +
+`async def main():\n` +
+`    try:\n` +
+`        for s in steps:\n` +
+`            sess = await get_session(s['server'])\n` +
+`            result = await sess.call_tool(s['tool'], s.get('args') or {})\n` +
+`            payload = getattr(result, 'content', None) or getattr(result, 'result', None)\n` +
+`            jsonable = to_jsonable(payload)\n` +
+`            print(f"[{s['server']}] tool {s['tool']} ->", json.dumps(jsonable, ensure_ascii=False))\n` +
+`            __MCP_export_results__.append({ 'server': s['server'], 'tool': s['tool'], 'args': s.get('args') or {}, 'ok': True, 'result': jsonable })\n` +
+`            if not bool(s.get('keep_session_open', False)):\n` +
+`                await close_session(s['server'])\n` +
+`    finally:\n` +
+`        await close_all_sessions()\n` +
+`        try:\n` +
+`            with open('${baseName}.exported.json', 'w', encoding='utf-8') as f:\n` +
+`                f.write(json.dumps({ 'exported_at': __import__('datetime').datetime.utcnow().isoformat() + 'Z', 'servers': servers, 'steps': __MCP_export_results__ }, ensure_ascii=False, indent=2))\n` +
+`            if len(__MCP_export_results__):\n` +
+`                print(json.dumps(__MCP_export_results__[-1]['result'], ensure_ascii=False, indent=2))\n` +
+`        except Exception as e:\n` +
+`            pass\n` +
+`\n` +
+`if __name__ == '__main__':\n` +
+`    asyncio.run(main())\n`;
+
+    // API YAML/JS/PY variants (Diagnosis API)
+    const apiYaml = `# API replay manifest for MCP Diagnosis Tool v ${APP_VERSION}\n` + toSingleQuotedYAML({ exported_with: `MCP Diagnosis Tool v ${APP_VERSION}`, servers: exportServers, steps: prettySteps }) + '\n';
+
+    const apiJs = `${snippetCommentJs}` +
+`// API replay script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
+`// Usage: node ${baseName}.api.js http://localhost:3060\n` +
+`const fetch = require('node-fetch');\n` +
+`const fs = require('fs');\n` +
+`(async function(){\n` +
+`  const base = process.argv[2] || 'http://localhost:3060';\n` +
+`  const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
+`  const steps = ${JSON.stringify(prettySteps, null, 2)};\n` +
+`  const sessions = {};\n` +
+`  const __MCP_export_results__ = [];\n` +
+`  for (const s of servers) {\n` +
+`    const resp = await fetch(base + '/api/sessions/open', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ spec: s.spec }) });\n` +
+`    const j = await resp.json().catch(() => null); if (!j || !j.sessionId) { console.error('Failed to open session for', s.name, j); process.exit(2); }\n` +
+`    sessions[s.name] = j.sessionId;\n` +
+`  }\n` +
+`  for (const step of steps) {\n` +
+`    const sid = sessions[step.server]; if (!sid) { console.error('No session for', step.server); continue; }\n` +
+`    const call = await fetch(base + '/api/tools/call', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid, tool: step.tool, args: step.args || {} }) });\n` +
+`    const out = await call.json().catch(() => null);\n` +
+`    __MCP_export_results__.push({ server: step.server, tool: step.tool, ok: !!(out && out.ok !== false), args: step.args || {}, result: out });\n` +
+`  }\n` +
+`  for (const [name, sid] of Object.entries(sessions)) {\n` +
+`    await fetch(base + '/api/sessions/close', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid }) });\n` +
+`  }\n` +
+`  try {\n` +
+`    const out = { exported_at: new Date().toISOString(), servers: servers, steps: __MCP_export_results__ };\n` +
+`    fs.writeFileSync('${baseName}.exported.json', JSON.stringify(out, null, 2));\n` +
+`    if (__MCP_export_results__.length) console.log(JSON.stringify(__MCP_export_results__[__MCP_export_results__.length-1].result, null, 2));\n` +
+`  } catch (e) { /* ignore */ }\n` +
+`})();\n`;
+
+    const apiPy = `${snippetCommentPy}` +
+`# API replay script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
+`# Usage: python ${baseName}.api.py http://localhost:3060\n` +
+`import os, sys, json, requests\n` +
+`base = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3060'\n` +
+`servers = ${JSON.stringify(exportServers, null, 2)}\n` +
+`steps = ${JSON.stringify(prettySteps, null, 2)}\n` +
+`sessions = {}\n` +
+`__MCP_export_results__ = []\n` +
+`for s in servers:\n` +
+`    r = requests.post(base + '/api/sessions/open', json={'spec': s['spec']})\n` +
+`    j = None\n` +
+`    try:\n` +
+`        j = r.json()\n` +
+`    except Exception:\n` +
+`        pass\n` +
+`    if not (j and 'sessionId' in j):\n` +
+`        print('Failed to open session for', s['name'], j)\n` +
+`        raise SystemExit(2)\n` +
+`    sessions[s['name']] = j['sessionId']\n` +
+`for step in steps:\n` +
+`    sid = sessions.get(step['server'])\n` +
+`    if not sid:\n` +
+`        print('No session for', step['server'])\n` +
+`        continue\n` +
+`    r = requests.post(base + '/api/tools/call', json={'sessionId': sid, 'tool': step['tool'], 'args': step.get('args') or {}})\n` +
+`    try:\n` +
+`        out = r.json()\n` +
+`    except Exception:\n` +
+`        out = None\n` +
+`    __MCP_export_results__.append({'server': step['server'], 'tool': step['tool'], 'ok': bool(out and out.get('ok') != False), 'args': step.get('args') or {}, 'result': out})\n` +
+`for name, sid in list(sessions.items()):\n` +
+`    try:\n` +
+`        requests.post(base + '/api/sessions/close', json={'sessionId': sid})\n` +
+`    except Exception:\n` +
+`        pass\n` +
+`try:\n` +
+`    with open('${baseName}.exported.json', 'w', encoding='utf-8') as f:\n` +
+`        f.write(json.dumps({'exported_at': __import__('datetime').datetime.utcnow().isoformat() + 'Z', 'servers': servers, 'steps': __MCP_export_results__}, ensure_ascii=False, indent=2))\n` +
+`    if len(__MCP_export_results__):\n` +
+`        print(json.dumps(__MCP_export_results__[-1]['result'], ensure_ascii=False, indent=2))\n` +
+`except Exception:\n` +
+`    pass\n`;
+
+    // Build list of targets for saving (UI saver will use this)
+    const targets = [
+      { name: `MCPflow/${baseName}.yaml`, content: yaml, mime: 'text/plain;charset=utf-8' },
+      { name: `MCPflow/${baseName}.js`, content: js, mime: 'application/javascript;charset=utf-8' },
+      { name: `MCPflow/${baseName}.py`, content: py, mime: 'text/x-python;charset=utf-8' },
+      { name: `APIflow/${baseName}.api.yaml`, content: apiYaml, mime: 'text/plain;charset=utf-8' },
+      { name: `APIflow/${baseName}.api.js`, content: apiJs, mime: 'application/javascript;charset=utf-8' },
+      { name: `APIflow/${baseName}.api.py`, content: apiPy, mime: 'text/x-python;charset=utf-8' },
+      { name: `json/${baseName}.json`, content: jsonManifest, mime: 'application/json;charset=utf-8' }
+    ];
+
+    return { baseName, yaml, js, py, apiYaml, apiJs, apiPy, json: jsonManifest, targets };
   }
 
   function setLoadingConfig(state) {
@@ -1761,7 +2244,10 @@
         startedAt: rec.startedAt || new Date().toISOString(),
         finishedAt: rec.finishedAt || null,
         success: !!rec.success,
-        warmup: !!rec.warmup
+        warmup: !!rec.warmup,
+        // Optional response payloads when available
+        response: rec.response !== undefined ? JSON.parse(JSON.stringify(rec.response)) : undefined,
+        rawResponse: rec.rawResponse !== undefined ? JSON.parse(JSON.stringify(rec.rawResponse)) : undefined
       };
       entry.callHistory.push(copy);
       // Also append to global workflow aggregator
@@ -1775,7 +2261,9 @@
         startedAt: copy.startedAt,
         finishedAt: copy.finishedAt,
         success: copy.success,
-        warmup: copy.warmup
+        warmup: copy.warmup,
+        response: copy.response,
+        rawResponse: copy.rawResponse
       });
       updateWorkflowPanel();
     } catch (_) {
@@ -2259,61 +2747,73 @@
       `  } catch (e) { console.error('Failed to write export JSON', e); }\n` +
       `})();\n` +
       `\n`;
+  function renderArgumentFields(context) {
+    const container = document.getElementById('tool-modal-form');
+    if (!container) return;
+    if (context.argSpecs && context.argSpecs.length) {
+      let html = '';
+      for (const spec of context.argSpecs) {
+        const label = escapeHtml(spec.name);
         const description = spec.description ? `<p class="modal-note">${escapeHtml(spec.description)}</p>` : '';
-    html += `<div class="modal-field"><label class="modal-label" for="${spec.inputId}">${label}`;
-        if (spec.required) {
-          html += '<span class="required">*</span>';
-        }
+        html += `<div class="modal-field"><label class="modal-label" for="${spec.inputId}">${label}`;
+        if (spec.required) html += '<span class="required">*</span>';
         html += '</label>';
-
         const type = spec.schema?.type;
         if (spec.enum && spec.enum.length) {
-          html += `<select class="modal-select" id="${spec.inputId}" data-arg-name="${escapeAttribute(
-            spec.name
-          )}" data-arg-type="enum">`;
-          if (!spec.required) {
-            html += '<option value="">(not set)</option>';
-          }
+          html += `<select class="modal-select" id="${spec.inputId}" data-arg-name="${escapeAttribute(spec.name)}" data-arg-type="enum">`;
+          if (!spec.required) html += '<option value="">(not set)</option>';
           spec.enum.forEach((value, idx) => {
             const optionLabel = String(value);
             html += `<option value="${idx}">${escapeHtml(optionLabel)}</option>`;
           });
           html += '</select>';
         } else if (type === 'boolean') {
-          html += `<select class="modal-select" id="${spec.inputId}" data-arg-name="${escapeAttribute(
-            spec.name
-          )}" data-arg-type="boolean">`;
-          if (!spec.required) {
-            html += '<option value="">(not set)</option>';
-          }
-          html += '<option value="true">true</option>';
-          html += '<option value="false">false</option>';
+          html += `<select class="modal-select" id="${spec.inputId}" data-arg-name="${escapeAttribute(spec.name)}" data-arg-type="boolean">`;
+          if (!spec.required) html += '<option value="">(not set)</option>';
+          html += '<option value="true">true</option><option value="false">false</option>';
           html += '</select>';
         } else if (type === 'number' || type === 'integer') {
           const step = type === 'integer' ? '1' : 'any';
-          html += `<input type="number" class="modal-input" id="${spec.inputId}" data-arg-name="${escapeAttribute(
-            spec.name
-          )}" data-arg-type="${type}" step="${step}" />`;
+          html += `<input type="number" class="modal-input" id="${spec.inputId}" data-arg-name="${escapeAttribute(spec.name)}" data-arg-type="${type}" step="${step}" />`;
         } else if (type === 'array' || type === 'object' || !type) {
-          html += `<textarea class="modal-textarea" id="${spec.inputId}" data-arg-name="${escapeAttribute(
-            spec.name
-          )}" data-arg-type="${type || 'json'}" placeholder="JSON value"></textarea>`;
+          html += `<textarea class="modal-textarea" id="${spec.inputId}" data-arg-name="${escapeAttribute(spec.name)}" data-arg-type="${type || 'json'}" placeholder="JSON value"></textarea>`;
         } else {
-          html += `<input type="text" class="modal-input" id="${spec.inputId}" data-arg-name="${escapeAttribute(
-            spec.name
-          )}" data-arg-type="${type}" />`;
+          html += `<input type="text" class="modal-input" id="${spec.inputId}" data-arg-name="${escapeAttribute(spec.name)}" data-arg-type="${type}" />`;
         }
         html += description;
         html += '</div>';
-      });
+      }
       container.innerHTML = html;
     } else {
-      container.innerHTML = `
-        <p class="modal-note">This tool did not declare arguments. Submit to run it with an empty object, or provide custom JSON if needed.</p>
-        <textarea class="modal-textarea" id="tool-args-json" placeholder="{ }"></textarea>
-      `;
+      container.innerHTML = '<p class="modal-note">This tool did not declare arguments. Submit to run it with an empty object, or provide custom JSON if needed.</p>' +
+        '<textarea class="modal-textarea" id="tool-args-json" placeholder="{ }"></textarea>';
     }
     applyLastArgs(context);
+  }
+
+  function applyLastArgs(context) {
+    if (!context || !context.argSpecs || !context.lastArgs) return;
+    for (const spec of context.argSpecs) {
+      const field = document.getElementById(spec.inputId);
+      if (!field) continue;
+      const last = context.lastArgs[spec.name];
+      const type = spec.schema?.type;
+      try {
+        if (spec.enum && spec.enum.length) {
+          const idx = spec.enum.findIndex(v => JSON.stringify(v) === JSON.stringify(last));
+          field.value = idx >= 0 ? String(idx) : '';
+        } else if (type === 'boolean') {
+          if (last === true) field.value = 'true'; else if (last === false) field.value = 'false'; else field.value = '';
+        } else if (type === 'number' || type === 'integer') {
+          if (last !== undefined && last !== null && last !== '') field.value = String(last);
+        } else if (type === 'array' || type === 'object' || !type) {
+          if (last !== undefined) field.value = JSON.stringify(last, null, 2);
+        } else {
+          if (last !== undefined && last !== null) field.value = String(last);
+        }
+      } catch(_) { /* best-effort */ }
+    }
+  }
   }
 
   function setModalResult(payload) {
@@ -2543,7 +3043,8 @@
         entry.hiddenSessionId = null;
         entry.hiddenSessionCreatedAt = null;
       }
-      appendCallHistory(entry, { toolName, args: {}, keepSessionOpen: true, startedAt: startedAtIso, finishedAt: finishedAtIso, success: ok, warmup: true });
+      const norm = ok ? normalizeToolOutput(data.output) : null;
+      appendCallHistory(entry, { toolName, args: {}, keepSessionOpen: true, startedAt: startedAtIso, finishedAt: finishedAtIso, success: ok, warmup: true, response: norm, rawResponse: data.output });
       renderServers();
       if (activeToolContext && activeToolContext.entry === entry) {
         updateModalSessionInfo(entry);
@@ -2797,7 +3298,7 @@
         entry.toolTests[tool.name].durationMs = durationMs;
         activeToolContext.reportData = reportData;
         toolModalReport.disabled = false;
-        appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: true });
+  appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: true, response: normalizedOut, rawResponse: data.output });
 
         // Re-render to update session status
         renderServers();
@@ -2830,7 +3331,7 @@
         entry.toolTests[tool.name].startedAt = startedAtIso;
         entry.toolTests[tool.name].finishedAt = finishedAtIso;
         entry.toolTests[tool.name].durationMs = durationMs;
-        appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: false });
+  appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: false, response: null, rawResponse: data.output });
 
         activeToolContext.reportData = reportData;
         toolModalReport.disabled = false;
@@ -2865,7 +3366,7 @@
       entry.toolTests[tool.name].reportData = reportData;
       entry.toolTests[tool.name].totalResult = resultPayload;
       entry.toolTests[tool.name].startedAt = startedAtIso;
-      appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: false });
+  appendCallHistory(entry, { toolName: tool.name, args, keepSessionOpen, startedAt: startedAtIso, finishedAt: finishedAtIso, success: false });
 
       entry.toolTests[tool.name].finishedAt = finishedAtIso;
       entry.toolTests[tool.name].durationMs = durationMs;

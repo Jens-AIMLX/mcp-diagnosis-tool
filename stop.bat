@@ -17,6 +17,8 @@ for /L %%P in (3060,1,3065) do (
 )
 timeout /t 1 /nobreak >nul
 echo Target ports cleaned (if any)
+echo remaining port processes
+netstat -ano | findstr %%P
 echo.
 
 REM Step 
