@@ -263,16 +263,79 @@ app.post('/api/playwright/codegen/start', (req, res) => {
     try { fs.mkdirSync(outDir, { recursive: true }); } catch (_) {}
     const outPath = path.join(outDir, `${id}.playwright.js`);
 
-    if (mode === 'auto') {
-      // Spawn the automated recorder helper which uses the Playwright library
-      const helper = path.join(__dirname, 'scripts', 'playwright_auto_recorder.js');
-      // Pipe stdio so we can capture logs and errors
-      const proc = spawn(process.execPath, [helper, '--url', url, '--out', outPath], { stdio: ['ignore', 'pipe', 'pipe'], detached: false });
-      activeCodegen.set(id, { proc, outPath, startedAt: Date.now(), mode: 'auto' });
-      proc.stdout && proc.stdout.on('data', (d) => { try { log('playwright_auto_recorder_stdout', { id, line: String(d).slice(0,200) }); } catch(_){} });
-      proc.stderr && proc.stderr.on('data', (d) => { try { log('playwright_auto_recorder_stderr', { id, line: String(d).slice(0,1000) }); } catch(_){} });
+    if (mode === 'visible') {
+      // Use Playwright CLI 'codegen' for an interactive visible recorder that
+      // shows the codegen UI. This will open a browser window and allow the
+      // user to interact with the page; the CLI will write the script to outPath
+      // when the process exits.
+      // Prefer local playwright binary from node_modules/.bin when available
+      let localBin = null;
+      try {
+        if (process.platform === 'win32') localBin = path.join(__dirname, 'node_modules', '.bin', 'playwright.cmd');
+        else localBin = path.join(__dirname, 'node_modules', '.bin', 'playwright');
+        if (!fs.existsSync(localBin)) localBin = null;
+      } catch (_) { localBin = null; }
+
+      let execCmd;
+      let execArgs;
+      if (localBin) {
+        // On Windows the '.cmd' wrapper should be invoked via cmd.exe to ensure
+        // arguments are passed correctly. On POSIX we can call the binary directly.
+        if (process.platform === 'win32' && localBin.toLowerCase().endsWith('.cmd')) {
+          execCmd = 'cmd.exe';
+          // Quote paths so cmd.exe handles spaces correctly (Windows uses cmd wrappers)
+          const quotedBin = '"' + localBin + '"';
+          const quotedOut = '"' + outPath + '"';
+          execArgs = ['/c', quotedBin, 'codegen', url, '--output', quotedOut];
+        } else {
+          execCmd = localBin;
+          execArgs = ['codegen', url, '--output', outPath];
+        }
+      } else {
+        // Fallback to npx invoking playwright codegen
+        execCmd = 'npx';
+        execArgs = ['playwright', 'codegen', url, '--output', outPath];
+      }
+
+      try {
+        log('playwright_codegen_spawn', { id, execCmd, execArgs: Array.isArray(execArgs) ? execArgs.slice(0,8) : execArgs });
+      } catch (_) {}
+
+      // Prepare spawn options
+      const spawnOptions = { stdio: ['ignore', 'pipe', 'pipe'], detached: false, shell: false, cwd: path.join(__dirname) };
+      let proc;
+      // On Windows, calling the .cmd wrapper via a single shell string is more reliable
+      // when paths contain spaces. Use shell execution for the Windows case only.
+      if (process.platform === 'win32' && localBin && localBin.toLowerCase().endsWith('.cmd')) {
+        const cmdString = `"${localBin}" codegen "${url}" --output "${outPath}"`;
+        proc = spawn(cmdString, { ...spawnOptions, shell: true });
+      } else {
+        proc = spawn(execCmd, execArgs, spawnOptions);
+      }
+      activeCodegen.set(id, { proc, outPath, startedAt: Date.now(), mode: 'visible' });
+      proc.stdout && proc.stdout.on('data', (d) => { try { log('playwright_recorder_stdout', { mode: 'visible', id, line: String(d).slice(0,200) }); } catch(_){} });
+      proc.stderr && proc.stderr.on('data', (d) => { try { log('playwright_recorder_stderr', { mode: 'visible', id, line: String(d).slice(0,1000) }); } catch(_){} });
       proc.on('exit', (code, sig) => {
-        try { log('playwright_auto_recorder_exit', { id, code, sig, outPath }); } catch(_) {}
+        try { log('playwright_recorder_exit', { mode: 'visible', id, code, sig, outPath }); } catch(_) {}
+      });
+      res.json({ ok: true, sessionId: id, outPath });
+      return;
+    }
+
+    if (mode === 'auto') {
+      // Spawn the automatic helper for programmatic runs
+      const helper = path.join(__dirname, 'scripts', 'playwright_auto_recorder.js');
+      const proc = spawn(process.execPath, [helper, '--url', url, '--out', outPath], { 
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: false,
+        shell: false,
+        cwd: path.join(__dirname, 'scripts')
+      });
+      activeCodegen.set(id, { proc, outPath, startedAt: Date.now(), mode: 'auto' });
+      proc.stdout && proc.stdout.on('data', (d) => { try { log('playwright_recorder_stdout', { mode: 'auto', id, line: String(d).slice(0,200) }); } catch(_){} });
+      proc.stderr && proc.stderr.on('data', (d) => { try { log('playwright_recorder_stderr', { mode: 'auto', id, line: String(d).slice(0,1000) }); } catch(_){} });
+      proc.on('exit', (code, sig) => {
+        try { log('playwright_recorder_exit', { mode: 'auto', id, code, sig, outPath }); } catch(_) {}
       });
       res.json({ ok: true, sessionId: id, outPath });
       return;
@@ -299,15 +362,37 @@ app.post('/api/playwright/codegen/stop', async (req, res) => {
     const info = activeCodegen.get(sessionId);
     if (!info) return res.status(404).json({ ok: false, error: { details: 'session not found' } });
     try {
-      info.proc.kill();
+      // Ask the process to exit gracefully first
+      try { info.proc.kill(); } catch (_) {}
     } catch (e) {
       // ignore
     }
-    // Wait briefly for the process to flush files
-    await new Promise((r) => setTimeout(r, 600));
+
+    // Wait for the recorder to write the output file. Some recorder helpers
+    // are interactive and flush the file on graceful exit; give them a short
+    // window to finish. Poll the file for up to 5s.
     let content = '';
+    const maxWait = 5000;
+    const start = Date.now();
+    while (Date.now() - start < maxWait) {
+      try {
+        if (fs.existsSync(info.outPath)) {
+          const st = fs.statSync(info.outPath);
+          if (st.size && st.size > 0) {
+            content = fs.readFileSync(info.outPath, { encoding: 'utf8' });
+            break;
+          }
+        }
+      } catch (e) {
+        // log and continue polling
+        try { log('playwright_stop_poll_error', { id: sessionId, err: String(e).slice(0,200) }); } catch(_){}
+      }
+      // Give process some time to flush
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    // If still empty, attempt one final read (may be empty) and proceed
     try {
-      if (fs.existsSync(info.outPath)) {
+      if (!content && fs.existsSync(info.outPath)) {
         content = fs.readFileSync(info.outPath, { encoding: 'utf8' });
       }
     } catch (e) {
@@ -317,6 +402,32 @@ app.post('/api/playwright/codegen/stop', async (req, res) => {
     res.json({ ok: true, sessionId, outPath: info.outPath, content });
   } catch (err) {
     logError('playwright_codegen_stop_error', err);
+    res.status(500).json({ ok: false, error: { details: err.message } });
+  }
+});
+
+// Status endpoint for a codegen session. Returns whether the session is active
+app.get('/api/playwright/codegen/status', (req, res) => {
+  try {
+    const sessionId = req.query.sessionId || req.body && req.body.sessionId;
+    if (!sessionId) return res.status(400).json({ ok: false, error: { details: 'sessionId query parameter is required' } });
+    const info = activeCodegen.get(String(sessionId));
+    if (!info) return res.json({ ok: true, sessionId, running: false });
+    // Try to check process alive state
+    let running = true;
+    try {
+      const pid = info.proc && info.proc.pid;
+      if (!pid) running = true; // unknown, assume running
+      else {
+        // On Node.js, process.kill(pid, 0) throws if not running
+        try { process.kill(pid, 0); running = true; } catch (e) { running = false; }
+      }
+    } catch (e) {
+      running = true;
+    }
+    return res.json({ ok: true, sessionId, running: !!running, mode: info.mode, outPath: info.outPath });
+  } catch (err) {
+    logError('playwright_codegen_status_error', err);
     res.status(500).json({ ok: false, error: { details: err.message } });
   }
 });

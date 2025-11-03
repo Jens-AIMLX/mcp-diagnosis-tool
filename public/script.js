@@ -7,7 +7,7 @@
 
 (() => {
   // Application version. Increment the last digit on each fix (start: 1.2.1.2)
-  const APP_VERSION = '1.2.1.15';
+  const APP_VERSION = '1.2.1.17';
   try { window.APP_VERSION = APP_VERSION; } catch (_) {}
 
   const form = document.getElementById('diagnose-form');
@@ -601,7 +601,7 @@
               const codeEntry = servers.find(e => e.isPlaywrightCodegen || (e.serverName && String(e.serverName).toLowerCase().indexOf('playwright') !== -1 && e.source === 'internal'));
               if (codeEntry && !codeEntry._playwright_sessionId) {
                 const defaultUrl = window.location.origin || window.location.href;
-                const resp = await fetch('/api/playwright/codegen/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: defaultUrl }) });
+                const resp = await fetch('/api/playwright/codegen/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: defaultUrl, mode: 'visible' }) });
                 const data = await resp.json().catch(() => ({}));
                 if (resp.ok && data && data.ok) {
                   codeEntry._playwright_sessionId = data.sessionId;
@@ -1301,29 +1301,31 @@
   }
 
   function buildHandshakeBlock(handshake, entry) {
-    if (!handshake) {
-      return '';
+    // Build handshake display when present, but always allow Playwright codegen controls
+    let html = '';
+    if (handshake) {
+      const protocol = handshake.protocolVersion ? `<code>${escapeHtml(handshake.protocolVersion)}</code>` : 'negotiated';
+      const serverInfo = handshake.serverInfo ?? {};
+      const serverName = serverInfo.name ? escapeHtml(serverInfo.name) : 'Unknown server';
+      const serverVersion = serverInfo.version ? ` (${escapeHtml(serverInfo.version)})` : '';
+      const serverDescription = serverInfo.description ? ` — ${escapeHtml(serverInfo.description)}` : '';
+      html += '<div class="detail-block"><strong>Handshake</strong><ul>';
+      html += `<li>Protocol: ${protocol}</li>`;
+      html += `<li>Server: ${serverName}${serverVersion}${serverDescription}</li>`;
+      html += '</ul>';
+      if (handshake.instructions !== undefined && handshake.instructions !== null) {
+        html += '<em>Instructions</em>';
+        html += `<pre>${escapeHtml(stringifyValue(handshake.instructions))}</pre>`;
+      }
+      if (handshake.capabilities) {
+        html += '<em>Capabilities</em>';
+        html += `<pre>${escapeHtml(stringifyValue(handshake.capabilities))}</pre>`;
+      }
+      html += '</div>';
     }
-    const protocol = handshake.protocolVersion ? `<code>${escapeHtml(handshake.protocolVersion)}</code>` : 'negotiated';
-    const serverInfo = handshake.serverInfo ?? {};
-    const serverName = serverInfo.name ? escapeHtml(serverInfo.name) : 'Unknown server';
-    const serverVersion = serverInfo.version ? ` (${escapeHtml(serverInfo.version)})` : '';
-    const serverDescription = serverInfo.description ? ` — ${escapeHtml(serverInfo.description)}` : '';
-    let html = '<div class="detail-block"><strong>Handshake</strong><ul>';
-    html += `<li>Protocol: ${protocol}</li>`;
-    html += `<li>Server: ${serverName}${serverVersion}${serverDescription}</li>`;
-    html += '</ul>';
-    if (handshake.instructions !== undefined && handshake.instructions !== null) {
-      html += '<em>Instructions</em>';
-      html += `<pre>${escapeHtml(stringifyValue(handshake.instructions))}</pre>`;
-    }
-    if (handshake.capabilities) {
-      html += '<em>Capabilities</em>';
-      html += `<pre>${escapeHtml(stringifyValue(handshake.capabilities))}</pre>`;
-    }
-    html += '</div>';
+
     // Playwright codegen controls (special internal server)
-  if (entry && entry.isPlaywrightCodegen) {
+    if (entry && entry.isPlaywrightCodegen) {
       html += '<div class="detail-block playwright-codegen-block">';
       html += '<strong>Playwright Codegen</strong>';
       html += '<div style="margin-top:8px; display:flex; gap:8px; align-items:center;">';
@@ -1467,14 +1469,20 @@
   function buildPromptsBlock(entry) {
     const prompts = entry.result?.prompts ?? [];
     let html = '<div class="detail-block"><strong>Prompts</strong>';
+
     if (!prompts.length) {
-      html += '<div>None.</div></div>';
+      html += '<div>No prompts provided.</div></div>';
       return html;
     }
+
     html += '<ul>';
-    prompts.forEach((prompt) => {
-      const description = prompt.description ? ` — ${escapeHtml(prompt.description)}` : '';
-      html += `<li><code>${escapeHtml(prompt.name)}</code>${description}</li>`;
+    prompts.forEach((p) => {
+      const title = p.name ? `<strong>${escapeHtml(p.name)}</strong>` : '';
+      const body = p.example ?? p.text ?? p.prompt ?? '';
+      html += '<li>';
+      if (title) html += `${title} `;
+      if (body) html += `<pre>${escapeHtml(stringifyValue(body))}</pre>`;
+      html += '</li>';
     });
     html += '</ul></div>';
     return html;
@@ -1484,39 +1492,18 @@
     const resources = entry.result?.resources ?? [];
     let html = '<div class="detail-block"><strong>Resources</strong>';
     if (!resources.length) {
-      html += '<div>None.</div></div>';
+      html += '<div>No resources reported.</div></div>';
       return html;
     }
     html += '<ul>';
-    resources.forEach((resource) => {
-      const parts = [];
-      if (resource.name) {
-        parts.push(`<code>${escapeHtml(resource.name)}</code>`);
-      }
-      if (resource.uri) {
-        parts.push(`(${escapeHtml(resource.uri)})`);
-      }
-      if (resource.description) {
-        parts.push(`— ${escapeHtml(resource.description)}`);
-      }
-      html += `<li>${parts.join(' ')}</li>`;
+    resources.forEach((r) => {
+      const title = r.name ? escapeHtml(String(r.name)) : (r.url ? escapeHtml(r.url) : escapeHtml(r.path || 'resource'));
+      const desc = r.description ? ` — ${escapeHtml(r.description)}` : '';
+      html += `<li>${title}${desc}`;
+      if (r.url) html += ` <a href="${escapeAttribute(r.url)}" target="_blank">link</a>`;
+      html += '</li>';
     });
     html += '</ul></div>';
-    return html;
-  }
-
-  function buildErrorBlock(entry) {
-    const error = entry.error ?? { kind: 'unknown' };
-    let html = '<div class="detail-block"><strong>Error</strong><ul>';
-    html += `<li>Kind: ${escapeHtml(error.kind ?? 'unknown')}</li>`;
-    if (error.advice) {
-      html += `<li>Advice: ${escapeHtml(error.advice)}</li>`;
-    }
-    html += '</ul>';
-    if (error.details !== undefined && error.details !== null) {
-      html += `<pre>${escapeHtml(stringifyValue(error.details))}</pre>`;
-    }
-    html += '</div>';
     return html;
   }
 
@@ -1562,9 +1549,9 @@
       if (entry.source === 'config') {
         detailSections.push(buildConfigSnippet(entry));
       }
-      if (entry.handshake) {
-        detailSections.push(buildHandshakeBlock(entry.handshake, entry));
-      }
+      // Always push the handshake block — buildHandshakeBlock will render handshake
+      // details when present and Playwright codegen controls when the entry is internal.
+      detailSections.push(buildHandshakeBlock(entry.handshake, entry));
       // Add session controls after handshake
       detailSections.push(buildSessionControlsBlock(entry));
 
@@ -1631,7 +1618,7 @@
         codeEntry.playwrightUrl = url;
         try {
           // Request server to start Playwright codegen and return session id + outPath
-          const resp = await fetch('/api/playwright/codegen/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+          const resp = await fetch('/api/playwright/codegen/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, mode: 'visible' }) });
           const data = await resp.json().catch(() => ({}));
           if (!resp.ok || !data.ok) {
             throw new Error(data?.error?.details || 'Failed to start server-side codegen');
@@ -2172,21 +2159,53 @@
     // Override exports with direct MCP client code (JS + Python)
     js = `/* Generated by MCP Diagnosis Tool: direct MCP client replay */\n` +
   `// Requires: npm i @modelcontextprotocol/sdk\n` +
-  `const { Client } = require('@modelcontextprotocol/sdk/client/index.js');\n` +
-  `const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');\n` +
-  `const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');\n` +
-  `const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');\n` +
-  `\n` +
-  `const spec = ${JSON.stringify(spec, null, 2)};\n` +
-  `const steps = ${JSON.stringify(steps, null, 2)};\n` +
-  `\n` +
-  `let client = null;\n` +
-  `function toJsonable(x){\n` +
-  `  if (x == null) return x;\n` +
-  `  const t = typeof x;\n` +
-  `  if (t === 'string' || t === 'number' || t === 'boolean') return x;\n` +
-  `  if (Array.isArray(x)) return x.map(toJsonable);\n` +
-  `  if (t === 'object') {\n` +
+  `// Preamble: attempt to resolve @modelcontextprotocol/sdk when the exported script is run outside the original project.\n` +
+  `(function(){\n` +
+  `  const path = require('path');\n` +
+  `  const fs = require('fs');\n` +
+  `  function tryRequire(p){ try { return require(p); } catch(e) { return null; } }\n` +
+  `  let _Client = tryRequire('@modelcontextprotocol/sdk/client/index.js');\n` +
+  `  let _Stdio = tryRequire('@modelcontextprotocol/sdk/client/stdio.js');\n` +
+  `  let _Streamable = tryRequire('@modelcontextprotocol/sdk/client/streamableHttp.js');\n` +
+  `  let _SSE = tryRequire('@modelcontextprotocol/sdk/client/sse.js');\n` +
+  `  if (!(_Client && _Stdio && _Streamable && _SSE)) {\n` +
+  `    try {\n` +
+  `      const { createRequire } = require('module');\n` +
+  `      let dir = __dirname;\n` +
+  `      while (true) {\n` +
+  `        try {\n` +
+  `          const pj = path.join(dir, 'package.json');\n` +
+  `          if (fs.existsSync(pj)) {\n` +
+  `            const req = createRequire(pj);\n` +
+  `            _Client = _Client || tryRequire.call(null, req.resolve('@modelcontextprotocol/sdk/client/index.js')) || req('@modelcontextprotocol/sdk/client/index.js');\n` +
+  `            _Stdio = _Stdio || req('@modelcontextprotocol/sdk/client/stdio.js');\n` +
+  `            _Streamable = _Streamable || req('@modelcontextprotocol/sdk/client/streamableHttp.js');\n` +
+  `            _SSE = _SSE || req('@modelcontextprotocol/sdk/client/sse.js');\n` +
+  `            break;\n` +
+  `          }\n` +
+  `        } catch(_) { }\n` +
+  `        const parent = path.dirname(dir);\n` +
+  `        if (parent === dir) break;\n` +
+  `        dir = parent;\n` +
+  `      }\n` +
+  `    } catch(_) { }\n` +
+  `  }\n` +
+  `  if (!(_Client && _Stdio && _Streamable && _SSE)) {\n` +
+  `    console.error('Cannot find @modelcontextprotocol/sdk. Run using the project wrapper (scripts/run_exported_test.js) or install the package in this folder.');\n` +
+  `    process.exit(1);\n` +
+  `  }\n` +
+  `  // expose resolved modules to outer scope\n` +
+  `  global.__mcp_export_client_module__ = {\n` +
+  `    Client: _Client.Client || _Client,\n` +
+  `    StdioClientTransport: _Stdio.StdioClientTransport || _Stdio,\n` +
+  `    StreamableHTTPClientTransport: _Streamable.StreamableHTTPClientTransport || _Streamable,\n` +
+  `    SSEClientTransport: _SSE.SSEClientTransport || _SSE\n` +
+  `  };\n` +
+  `})();\n` +
+  `const { Client } = global.__mcp_export_client_module__;\n` +
+  `const { StdioClientTransport } = global.__mcp_export_client_module__;\n` +
+  `const { StreamableHTTPClientTransport } = global.__mcp_export_client_module__;\n` +
+  `const { SSEClientTransport } = global.__mcp_export_client_module__;\n` +
   `    if (x.type && (x.text !== undefined || x.data !== undefined || x.mimeType !== undefined || x.name !== undefined || x.error !== undefined || x.url !== undefined || x.path !== undefined)) {\n` +
   `      const out = { type: x.type };\n` +
   `      for (const k of ['text','data','mimeType','name','error','url','path']) { if (Object.prototype.hasOwnProperty.call(x, k)) out[k] = toJsonable(x[k]); }\n` +

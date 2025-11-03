@@ -1,0 +1,8 @@
+# API replay manifest for MCP Diagnosis Tool v 1.2.1.15
+# Contains high-level steps to reproduce a session via the diagnosis server API
+server: auto-test
+spec: {
+  "mode": "http",
+  "url": "http://localhost:3060"
+}
+steps: []

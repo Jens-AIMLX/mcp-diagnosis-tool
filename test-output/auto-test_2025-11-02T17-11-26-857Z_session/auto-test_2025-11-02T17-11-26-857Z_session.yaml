@@ -1,0 +1,12 @@
+# Exported with MCP Diagnosis Tool v 1.2.1.15
+version: 1
+exported_at: '2025-11-02T17:11:26.857Z'
+server:
+  name: 'auto-test'
+  spec:
+    mode: 'http'
+    url: 'http://localhost:3060'
+steps:
+  - action: 'execute_playwright_recording'
+    file: 'auto-test_2025-11-02T17-11-26-857Z_session.playwright.js'
+  []
