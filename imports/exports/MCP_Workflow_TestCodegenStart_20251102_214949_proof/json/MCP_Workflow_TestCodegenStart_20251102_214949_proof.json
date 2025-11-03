@@ -1,0 +1,80 @@
+{
+  "configs": [
+    {
+      "name": "local",
+      "spec": {
+        "mode": "http",
+        "url": "http://localhost:3060",
+        "note": "Proof export connecting to local server (simulated)"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "server": "local",
+      "tool": "browser_navigate",
+      "arguments": {
+        "url": "http://localhost:3060"
+      },
+      "result": {
+        "ok": true,
+        "tool": "browser_navigate",
+        "server": "local",
+        "args": {
+          "url": "http://localhost:3060"
+        },
+        "timestamp": "2025-11-03T03:09:51.096Z"
+      }
+    },
+    {
+      "server": "local",
+      "tool": "browser_click",
+      "arguments": {
+        "selector": "#login"
+      },
+      "result": {
+        "ok": true,
+        "tool": "browser_click",
+        "server": "local",
+        "args": {
+          "selector": "#login"
+        },
+        "timestamp": "2025-11-03T03:09:51.230Z"
+      }
+    },
+    {
+      "server": "local",
+      "tool": "browser_type",
+      "arguments": {
+        "selector": "#user",
+        "text": "tester"
+      },
+      "result": {
+        "ok": true,
+        "tool": "browser_type",
+        "server": "local",
+        "args": {
+          "selector": "#user",
+          "text": "tester"
+        },
+        "timestamp": "2025-11-03T03:09:51.354Z"
+      }
+    },
+    {
+      "server": "local",
+      "tool": "browser_click",
+      "arguments": {
+        "selector": "#submit"
+      },
+      "result": {
+        "ok": true,
+        "tool": "browser_click",
+        "server": "local",
+        "args": {
+          "selector": "#submit"
+        },
+        "timestamp": "2025-11-03T03:09:51.478Z"
+      }
+    }
+  ]
+}

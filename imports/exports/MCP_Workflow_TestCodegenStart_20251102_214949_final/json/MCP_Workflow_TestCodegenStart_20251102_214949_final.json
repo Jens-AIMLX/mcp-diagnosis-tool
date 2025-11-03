@@ -1,0 +1,67 @@
+{
+  "configs": [
+    {
+      "name": "playwright",
+      "spec": {
+        "mode": "stdio",
+        "command": "npx",
+        "args": [
+          "-y",
+          "@playwright/mcp@latest",
+          "--config",
+          "C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/plwghtconfig.json"
+        ]
+      }
+    }
+  ],
+  "steps": [
+    {
+      "server": "playwright",
+      "tool": "browser_navigate",
+      "arguments": {
+        "url": "http://localhost:3002/"
+      },
+      "result": {
+        "handshake": {
+          "transport": null,
+          "protocolVersion": "negotiated",
+          "serverInfo": {
+            "name": "Playwright",
+            "version": "0.0.43"
+          },
+          "capabilities": {
+            "tools": {}
+          },
+          "instructions": null
+        },
+        "serverConfig": {
+          "mode": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@playwright/mcp@latest",
+            "--config",
+            "C:/Users/jenss/ONEDRI~2/Code/Test/mcpconfig/subconfigs/plwghtconfig.json"
+          ]
+        },
+        "toolArgs": {
+          "url": "http://localhost:3002/"
+        },
+        "output": {
+          "content": [
+            {
+              "type": "text",
+              "text": "### Ran Playwright code\n```js\nawait page.goto('http://localhost:3002/');\n```\n\n### New console messages\n- [DEBUG] [vite] connecting... @ http://localhost:3002/@vite/client:731\n- [DEBUG] [vite] connected. @ http://localhost:3002/@vite/client:825\n\n### Page state\n- Page URL: http://localhost:3002/\n- Page Title: Bahnabnahme - Kegelbahnen Verwaltung\n- Page Snapshot:\n```yaml\n- generic [ref=e7]:\n  - generic [ref=e8]:\n    - heading \"Bahnabnahme\" [level=1] [ref=e9]\n    - paragraph [ref=e10]: Professionelle Bahnvermessung & Zertifizierung\n\n```\n"
+            }
+          ]
+        },
+        "meta": {
+          "startedAt": "2025-11-03T03:14:08.386Z",
+          "receivedAt": "2025-11-03T03:14:08.742Z",
+          "durationMs": 350,
+          "ok": true
+        }
+      }
+    }
+  ]
+}

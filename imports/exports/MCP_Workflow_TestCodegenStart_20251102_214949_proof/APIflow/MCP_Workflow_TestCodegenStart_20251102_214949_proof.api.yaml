@@ -1,0 +1,15 @@
+# APIflow manifest (proof export)
+servers:
+- name: local
+  spec:
+    mode: http
+    url: http://localhost:3060
+steps:
+- server: local
+  tool: browser_navigate
+  args:
+    url: http://localhost:3060
+- server: local
+  tool: browser_click
+  args:
+    selector: '#login'

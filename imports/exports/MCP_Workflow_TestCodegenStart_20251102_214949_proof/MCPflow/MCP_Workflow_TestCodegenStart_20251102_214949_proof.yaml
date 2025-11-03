@@ -1,0 +1,12 @@
+# Exported proof workflow (MCP Diagnosis Tool)
+server:
+  name: local
+  spec:
+    mode: http
+    url: http://localhost:3060
+    note: Proof export connecting to local server (simulated)
+steps:
+- action: call local tool browser_navigate url=http://localhost:3060
+- action: call local tool browser_click selector=#login
+- action: call local tool browser_type selector=#user text=tester
+- action: call local tool browser_click selector=#submit

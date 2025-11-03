@@ -149,164 +149,14 @@
   async function refreshLogViewer() {
     if (!logViewerPre) return;
     logViewerPre.textContent = 'Loading log…';
-    // Prefer tail endpoint; fallback to full download
-    let result = await fetchLogTail(20000);
-    if (!result.ok) {
-      result = await fetchLatestLogText();
-    }
-    if (!result.ok) {
-      logViewerPre.textContent = `Unable to load log (${result.error || 'unknown error'})`;
-      return;
-    }
-    const text = result.text || '';
-    logViewerPre.textContent = text || '(empty)';
-    // Apply wrap preference
-    if (chkLogWrap) {
-      logViewerPre.classList.toggle('wrap', chkLogWrap.checked);
-    }
-    // Auto-scroll to bottom
-    requestAnimationFrame(() => { logViewerPre.scrollTop = logViewerPre.scrollHeight; });
-  }
-
-  // Log viewer foldout toggle
-  if (logviewFoldoutToggle && logviewFoldout) {
-    logviewFoldoutToggle.addEventListener('click', () => {
-      // Ensure the Server panel is visible before showing logs
-      if (serverFoldout && serverFoldout.classList.contains('hidden')) {
-        serverFoldout.classList.remove('hidden');
-        if (serverFoldoutToggle) {
-          serverFoldoutToggle.classList.add('open');
-          serverFoldoutToggle.setAttribute('aria-expanded', 'true');
-        }
-        void refreshServerControl();
-      }
-
-      const nowHidden = logviewFoldout.classList.toggle('hidden');
-      const isOpen = !nowHidden;
-      logviewFoldoutToggle.classList.toggle('open', isOpen);
-      logviewFoldoutToggle.setAttribute('aria-expanded', String(isOpen));
-      if (isOpen) {
-        void refreshLogViewer();
-        scheduleTailPoll();
-      } else {
-        clearTimeout(logTailTimer);
-      }
-    });
-  }
-
-
-  // Log viewer options: wrap and follow
-  if (chkLogWrap && logViewerPre) {
-    chkLogWrap.addEventListener('change', () => {
-      logViewerPre.classList.toggle('wrap', chkLogWrap.checked);
-    });
-  }
-  if (chkLogFollow) {
-    chkLogFollow.addEventListener('change', () => {
-      if (chkLogFollow.checked) scheduleTailPoll(); else clearTimeout(logTailTimer);
-    });
-  }
-
-  if (btnRefreshLogview) {
-    btnRefreshLogview.addEventListener('click', () => void refreshLogViewer());
-  }
-  if (btnCopyLogview) {
-    btnCopyLogview.addEventListener('click', async () => {
-      try {
-        const text = logViewerPre?.textContent || '';
-        await navigator.clipboard.writeText(text);
-        btnCopyLogview.textContent = 'Copied';
-        setTimeout(() => { btnCopyLogview.textContent = 'Copy'; }, 900);
-      } catch (_) {
-        alert('Copy failed');
-      }
-    });
-  }
-
-  async function fetchServerInfo() {
     try {
-      const res = await fetch('/api/server/info', { cache: 'no-store' });
-      if (!res.ok) throw new Error(String(res.status));
-      const data = await res.json();
-      return data;
-    } catch (err) {
-      return { ok: false, error: err?.message || String(err) };
+      const data = await fetchLatestLogText();
+      if (data.ok) logViewerPre.textContent = data.text;
+      else logViewerPre.textContent = 'Failed to load log: ' + (data.error || 'unknown');
+    } catch (e) {
+      logViewerPre.textContent = 'Failed to load log: ' + String(e);
     }
-  }
-
-  function renderServerControl(info) {
-    if (!serverFoldout) return;
-    const offline = !info || info.ok === false;
-    if (offline) {
-      serverPortEl.textContent = '-';
-      serverPidEl.textContent = '-';
-      if (serverStartTimeEl) serverStartTimeEl.textContent = '-';
-      serverLogStateEl.textContent = 'offline';
-      serverLogStateEl.className = 'badge';
-      serverOfflineNote.classList.remove('hidden');
-      btnReleaseLog.disabled = true;
-      btnShutdown.disabled = true;
-      btnRestart.disabled = true;
-      if (serverFoldoutToggle) serverFoldoutToggle.setAttribute('data-status', 'offline');
-
-      return;
-    }
-    serverOfflineNote.classList.add('hidden');
-    serverPortEl.textContent = String(info.port ?? '');
-    serverPidEl.textContent = String(info.pid ?? '');
-    if (serverStartTimeEl) {
-      const startTs = info.startTime || null;
-      serverStartTimeEl.textContent = startTs ? new Date(startTs).toLocaleString() : '—';
-    }
-    if (serverNextRotationEl) {
-      const ts = info.nextRotationTs || null;
-      serverNextRotationEl.textContent = ts ? new Date(ts).toLocaleString() : '—';
-    }
-    const detached = !!info.logDetached;
-    const redirected = !!info.stdoutRedirected;
-    serverLogStateEl.textContent = detached ? 'log detached' : (redirected ? 'logging attached' : 'stdout tty');
-    serverLogStateEl.className = 'badge' + (detached ? ' ok' : '');
-    btnReleaseLog.disabled = detached; // only once per run
-    if (serverFoldoutToggle) serverFoldoutToggle.setAttribute('data-status', 'ok');
-
-    btnShutdown.disabled = false;
-    btnRestart.disabled = false;
-  }
-
-  async function refreshServerControl() {
-    const info = await fetchServerInfo();
-    renderServerControl(info);
-  }
-  // Foldout toggle
-  if (serverFoldoutToggle && serverFoldout) {
-    serverFoldoutToggle.addEventListener('click', () => {
-      const nowHidden = serverFoldout.classList.toggle('hidden');
-      const isOpen = !nowHidden;
-      serverFoldoutToggle.classList.toggle('open', isOpen);
-      serverFoldoutToggle.setAttribute('aria-expanded', String(isOpen));
-      if (isOpen) {
-        void refreshServerControl();
-      }
-    });
-  }
-
-
-  // Wire buttons
-  if (btnReleaseLog) {
-    btnReleaseLog.addEventListener('click', async () => {
-      btnReleaseLog.disabled = true;
-      try {
-        const res = await fetch('/api/server/release-log', { method: 'POST' });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.ok === false) {
-          alert('Failed to release logfile: ' + (data?.error?.details || res.status));
-        }
-      } catch (err) {
-        alert('Failed to release logfile: ' + (err?.message || String(err)));
-      } finally {
-        await refreshServerControl();
-      }
-    });
+    return;
   }
   if (btnShutdown) {
     btnShutdown.addEventListener('click', async () => {
@@ -1010,10 +860,9 @@
   }
 
   function setCurrentConfig(configObj, fileName) {
-    currentConfig = configObj ? JSON.parse(JSON.stringify(configObj)) : null;
-    if (fileName !== undefined) {
-      currentConfigFileName = fileName || '';
-    }
+    // Set current configuration object and update UI labels.
+    currentConfig = configObj || null;
+    currentConfigFileName = fileName || '';
     updateSaveButtons();
     refreshConfigStatusLabel();
   }
@@ -2114,10 +1963,19 @@
       server: { name: displayName, spec },
       steps: prettySteps
     };
-  const yaml = `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` + snippetCommentYamlSingle + toSingleQuotedYAML(workflow) + '\n';
+  const yaml = `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` + snippetCommentYaml + toSingleQuotedYAML(workflow) + '\n';
     const baseName = `${sanitizeFilenameSegment(displayName)}_${formatTimestampForFilename(new Date())}_session`;
 
-  let js = snippetCommentJsSingle + `/* Generated by MCP Diagnosis Tool */\n` +
+    // Build a small JSON artifact capturing servers and steps for programmatic use
+    const exportJsonObj = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      servers: [{ name: displayName, spec }],
+      steps: prettySteps
+    };
+    const json = JSON.stringify(exportJsonObj, null, 2);
+
+    let js = snippetCommentJsSingle + `/* Generated by MCP Diagnosis Tool */\n` +
 `const BASE_URL = process.env.MCP_DOCTOR_URL || 'http://localhost:3000';\n` +
 `const spec = ${JSON.stringify(spec, null, 2)};\n` +
 `const steps = ${JSON.stringify(steps, null, 2)};\n` +
@@ -2250,11 +2108,13 @@
   `}\n` +
   `\n` +
   `async function run() {\n` +
+  `  const __MCP_export_results__ = [];\n` +
   `  try {\n` +
   `    for (const s of steps) {\n` +
   `      const c = await ensureClient();\n` +
   `      const result = await c.callTool({ name: s.tool, arguments: s.args || {} });\n` +
   `      const payload = (result && (result.content ?? result)) ?? null;\n` +
+  `      __MCP_export_results__.push({ server: spec && spec.name ? spec.name : '${displayName}', tool: s.tool, ok: !!(result && (result.ok !== false)), started_at: s.started_at, finished_at: s.finished_at, result: toJsonable(payload) });\n` +
   `      console.log('tool', s.tool, '->\\n' + JSON.stringify(toJsonable(payload), null, 2));\n` +
   `      if (!s.keep_session_open) {\n` +
   `        await closeClient();\n` +
@@ -2262,784 +2122,19 @@
   `    }\n` +
   `  } finally {\n` +
   `    await closeClient();\n` +
+  `    try {\n` +
+  `      if (typeof process !== 'undefined' && process.versions && process.versions.node) {\n` +
+  `        const fs = require('fs');\n` +
+  `        fs.writeFileSync('${baseName}.exported.json', JSON.stringify({ exported_at: new Date().toISOString(), servers: [spec], steps: __MCP_export_results__ }, null, 2));\n` +
+  `        console.log('Wrote ${baseName}.exported.json');\n` +
+  `      }\n` +
+  `    } catch (e) { console.error('Failed to write export JSON', e); }\n` +
   `  }\n` +
   `}\n` +
   `\n` +
-  `run().catch(err => { console.error('Run failed:', err); process.exit(1); });\n`;
+  `(async () => { try { await run(); } catch(err){ console.error('Run failed:', err); process.exit(1); } if (typeof __MCP_export_results__ !== 'undefined' && __MCP_export_results__.length) { console.log(JSON.stringify(__MCP_export_results__[__MCP_export_results__.length-1].result, null, 2)); } })();\n`;
 
     py = `# Generated by MCP Diagnosis Tool: direct MCP client replay\n` +
-  `# Requires: pip install mcp\n` +
-  `import asyncio, json\n` +
-  `from contextlib import AsyncExitStack\n` +
-  `from mcp import ClientSession\n` +
-  `from mcp.client.stdio import stdio_client, StdioServerParameters\n` +
-  `from mcp.client.streamable_http import streamablehttp_client\n` +
-  `\n` +
-  `spec = ${JSON.stringify(spec, null, 2)}\n` +
-  `steps = ${JSON.stringify(steps, null, 2)}\n` +
-  `\n` +
-  `session = None\n` +
-  `exit_stack = AsyncExitStack()\n` +
-  `\n` +
-  `def to_jsonable(x):\n` +
-  `    import dataclasses\n` +
-  `    if x is None or isinstance(x, (str, int, float, bool)):\n` +
-  `        return x\n` +
-  `    if isinstance(x, (list, tuple)):\n` +
-  `        return [to_jsonable(i) for i in x]\n` +
-  `    if isinstance(x, dict):\n` +
-  `        return {str(k): to_jsonable(v) for k, v in x.items()}\n` +
-  `    t = getattr(x, 'type', None)\n` +
-  `    if t:\n` +
-  `        out = {'type': t}\n` +
-  `        for attr in ('text','data','mimeType','name','error','url','path'):\n` +
-  `            if hasattr(x, attr):\n` +
-  `                out[attr] = getattr(x, attr)\n` +
-  `        return out\n` +
-  `    if dataclasses.is_dataclass(x):\n` +
-  `        return to_jsonable(dataclasses.asdict(x))\n` +
-  `    d = getattr(x, '__dict__', None)\n` +
-  `    if d is not None:\n` +
-  `        return {k: to_jsonable(v) for k, v in d.items()}\n` +
-  `    return str(x)\n` +
-  `\n` +
-  `async def ensure_session():\n` +
-  `    global session\n` +
-  `    if session is not None:\n` +
-  `        return session\n` +
-  `    await exit_stack.__aenter__()\n` +
-  `    if spec.get('mode') == 'stdio':\n` +
-  `        params = StdioServerParameters(command=spec.get('command'), args=spec.get('args') or [], env=spec.get('env') or None)\n` +
-  `        read, write = await exit_stack.enter_async_context(stdio_client(params))\n` +
-  `        sess = await exit_stack.enter_async_context(ClientSession(read, write))\n` +
-  `    elif spec.get('mode') == 'http':\n` +
-  `        url = spec.get('url')\n` +
-  `        if not url:\n` +
-  `            raise RuntimeError('Missing spec.url for http mode')\n` +
-  `        read, write = await exit_stack.enter_async_context(streamablehttp_client(url))\n` +
-  `        sess = await exit_stack.enter_async_context(ClientSession(read, write))\n` +
-  `    else:\n` +
-  `        raise RuntimeError(f"Unknown mode: {spec.get('mode')}")\n` +
-  `    await sess.initialize()\n` +
-  `    session = sess\n` +
-  `    return session\n` +
-  `\n` +
-  `async def close_session():\n` +
-  `    global session\n` +
-  `    try:\n` +
-  `        await exit_stack.aclose()\n` +
-  `    finally:\n` +
-  `        session = None\n` +
-  `\n` +
-  `async def main():\n` +
-  `    try:\n` +
-  `        for s in steps:\n` +
-  `            sess = await ensure_session()\n` +
-  `            result = await sess.call_tool(s['tool'], s.get('args') or {})\n` +
-  `            payload = getattr(result, 'content', None) or getattr(result, 'result', None)\n` +
-  `            print('tool', s['tool'], '->', json.dumps(to_jsonable(payload), ensure_ascii=False))\n` +
-  `            if not bool(s.get('keep_session_open', False)):\n` +
-  `                await close_session()\n` +
-  `    finally:\n` +
-  `        await close_session()\n` +
-  `\n` +
-  `if __name__ == '__main__':\n` +
-  `    asyncio.run(main())\n`;
-
-    // Build API-oriented artifacts to replay via the diagnosis server HTTP API
-    const apiYamlObj = {
-      exported_with: `MCP Diagnosis Tool v ${APP_VERSION}`,
-      servers: exportServers,
-      steps: prettySteps
-    };
-    const apiYaml = `# API replay manifest for MCP Diagnosis Tool v ${APP_VERSION}\n` +
-      toSingleQuotedYAML(apiYamlObj) + '\n';
-
-    const apiJs = snippetCommentJs + `// API replay script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
-      `// Usage: node ${baseName}.api.js http://localhost:3060\n` +
-      `const fetch = require('node-fetch');\n` +
-      `(async function(){\n` +
-      `  const base = process.argv[2] || 'http://localhost:3060';\n` +
-      `  const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
-      `  const steps = ${JSON.stringify(prettySteps, null, 2)};\n` +
-      `  const sessions = {};\n` +
-      `  for (const s of servers) {\n` +
-      `    const resp = await fetch(base + '/api/sessions/open', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ spec: s.spec }) });\n` +
-      `    const j = await resp.json(); if (!j.sessionId) { console.error('Failed to open session for', s.name, j); process.exit(2); }\n` +
-      `    sessions[s.name] = j.sessionId; console.log('Opened', s.name, j.sessionId);\n` +
-      `  }\n` +
-      `  for (const step of steps) {\n` +
-      `    const sid = sessions[step.server]; if (!sid) { console.error('No session for', step.server); continue; }\n` +
-      `    console.log('Calling', step.tool, 'on', step.server);\n` +
-      `    const call = await fetch(base + '/api/tools/call', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid, tool: step.tool, args: step.args || {} }) });\n` +
-      `    const out = await call.json().catch(() => null); console.log('Result', out);\n` +
-      `  }\n` +
-      `  for (const [name, sid] of Object.entries(sessions)) {\n` +
-      `    await fetch(base + '/api/sessions/close', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid }) });\n` +
-      `    console.log('Closed', name);\n` +
-      `  }\n` +
-      `})();\n`;
-
-    const apiPs = snippetCommentJs + `# API replay PowerShell script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
-      `# Usage: powershell -File ${baseName}.api.ps1 -BaseUrl http://localhost:3060\n` +
-      `$BaseUrl = $args[0]; if (-not $BaseUrl) { $BaseUrl = 'http://localhost:3060' }\n` +
-      `$servers = ${JSON.stringify(exportServers, null, 2)}\n` +
-      `$steps = ${JSON.stringify(prettySteps, null, 2)}\n` +
-      `$sessions = @{}\n` +
-      `foreach ($s in $servers) {\n` +
-      `  $body = @{ spec = $s.spec } | ConvertTo-Json -Depth 10;\n` +
-      `  $resp = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/open') -ContentType 'application/json' -Body $body;\n` +
-      `  if (-not $resp.sessionId) { Write-Error "Failed to open session for $($s.name): $($resp|ConvertTo-Json -Depth 5)" ; exit 2 }\n` +
-      `  $sessions[$s.name] = $resp.sessionId; Write-Host "Opened $($s.name) -> $($resp.sessionId)";\n` +
-      `}\n` +
-      `foreach ($st in $steps) {\n` +
-      `  $sid = $sessions[$st.server]; if (-not $sid) { Write-Warning "No session for $($st.server)" ; continue }\n` +
-      `  $call = @{ sessionId = $sid; tool = $st.tool; args = $st.args } | ConvertTo-Json -Depth 12;\n` +
-      `  $out = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/tools/call') -ContentType 'application/json' -Body $call;\n` +
-      `  Write-Host "Call result:"; $out | ConvertTo-Json -Depth 5;\n` +
-      `}\n` +
-      `foreach ($kv in $sessions.GetEnumerator()) { Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/close') -ContentType 'application/json' -Body (ConvertTo-Json @{ sessionId = $kv.Value } -Depth 5); Write-Host "Closed $($kv.Key)" }\n`;
-
-    return { yaml, js, py, apiYaml, apiJs: apiJs, apiPs: apiPs, baseName };
-  }
-
-  // Expose helpers for automation/testing (Playwright can call these via page.evaluate)
-  try {
-    window.apiBuildExportForEntry = async function(entry) {
-      return await generateWorkflowArtifacts(entry);
-    };
-    window.apiBuildCombinedExportForWorkflow = async function(wf) {
-      return await generateCombinedWorkflowArtifacts(wf);
-    };
-  } catch (_) {
-    // ignore in non-browser contexts
-  }
-
-  // Automation helper: when the page is opened with ?automate_export=1, build export
-  // artifacts automatically and print them to the console so external runners (Playwright)
-  // can capture them without using page.evaluate.
-  try {
-    if (typeof window !== 'undefined' && window.location && window.location.search && window.location.search.indexOf('automate_export=1') !== -1) {
-      (async () => {
-        try {
-          // Fallback automation: call the server /api/export/template endpoint so the page
-          // emits the generated artifacts to the console. This avoids depending on internal
-          // UI state and keeps the automation stable.
-          const spec = { mode: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp@latest', '--output-dir', 'C:/Users/jenss/OneDrive - Singularyt UG/Code/Test/.evidence/screenshots/tmp_playwright_export', '--browser','chrome','--viewport-size','2400,1350','--isolated','--no-sandbox'] };
-          const body = { spec: spec, serverName: 'playwright', callHistory: [{ toolName: 'browser_navigate', args: { url: window.location.origin } }] };
-          const resp = await fetch('/api/export/template', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-          const json = await resp.json().catch(() => null);
-          if (json && json.ok) {
-            console.log('EXPORT_ARTIFACTS:' + JSON.stringify(json));
-          } else {
-            console.error('EXPORT_ERROR: server did not return artifacts', json);
-          }
-        } catch (e) {
-          console.error('EXPORT_ERROR:' + String(e));
-        }
-      })();
-    }
-  } catch (_) {}
-
-  async function saveArtifactsViaDialog(artifacts) {
-    const suggested = artifacts.baseName || 'mcp_session';
-    // Debug trace to help diagnose which branch runs in the browser
-    try {
-      const info = { showDirectoryPicker: !!window.showDirectoryPicker, showSaveFilePicker: !!window.showSaveFilePicker };
-      console.log('[DEBUG] saveArtifactsViaDialog invoked. APIs:', info);
-      showExportStatus(`Export APIs: dir=${info.showDirectoryPicker} save=${info.showSaveFilePicker}`, 3000);
-    } catch (_) {}
-    // Use the suggested base name; do NOT prompt here. The folder picker is invoked
-    // directly from the click handler to preserve the user gesture. This function only
-    // performs fallback saves (save-file picker or downloads).
-    const baseName = artifacts.baseName || suggested;
-
-    // Prefer directory picker so we can create a subfolder named after the baseName
-    if (window.showDirectoryPicker) {
-      try {
-        showExportStatus('Please choose a folder to save the export...');
-        const dirHandle = await window.showDirectoryPicker();
-        // Create a subdirectory with the baseName to keep all files together
-        const sub = await dirHandle.getDirectoryHandle(baseName, { create: true });
-
-        // Write all artifacts into the subdirectory
-        const filesToWrite = [
-          { name: `${baseName}.yaml`, content: artifacts.yaml },
-          { name: `${baseName}.js`, content: artifacts.js },
-          { name: `${baseName}.py`, content: artifacts.py },
-          { name: `${baseName}.api.js`, content: artifacts.apiJs || artifacts.apiJs },
-          { name: `${baseName}.api.ps1`, content: artifacts.apiPs || artifacts.apiPs },
-          { name: `${baseName}.api.yaml`, content: artifacts.apiYaml || artifacts.apiYaml }
-        ];
-
-        if (artifacts.playwrightJs) filesToWrite.push({ name: `${baseName}.playwright.js`, content: artifacts.playwrightJs });
-        if (artifacts.playwrightPy) filesToWrite.push({ name: `${baseName}.playwright.py`, content: artifacts.playwrightPy });
-
-        for (const f of filesToWrite) {
-          try {
-            const fh = await sub.getFileHandle(f.name, { create: true });
-            const w = await fh.createWritable();
-            await w.write(f.content);
-            await w.close();
-          } catch (e) {
-            console.error('Failed to write', f.name, e);
-            throw e;
-          }
-        }
-        showExportStatus('Export saved to folder: ' + baseName, 4000);
-        return;
-      } catch (err) {
-        if (err.name === 'AbortError') return; // user cancelled
-        console.warn('Directory-picker save failed, falling back to file pickers:', err);
-        // Fall through to legacy save-file picker flow below
-      }
-    }
-
-    // Use showSaveFilePicker for single-file experience (fallback)
-    if (window.showSaveFilePicker) {
-      try {
-        showExportStatus('Opening save dialog for YAML...');
-        // Show save dialog for the YAML file (primary file)
-        const fileHandle = await window.showSaveFilePicker({
-          suggestedName: `${suggested}.yaml`,
-          types: [{
-            description: 'MCP Workflow Files',
-            accept: { 'text/yaml': ['.yaml'] }
-          }]
-        });
-
-        // Save the YAML file to user-chosen location
-        const writable = await fileHandle.createWritable();
-        await writable.write(artifacts.yaml);
-        await writable.close();
-
-  // Use the baseName chosen by the user as the saved base filename
-  const savedName = baseName;
-
-        // Try to write companion files into a subdirectory in the same parent if possible
-        try {
-          if (typeof fileHandle.getParent === 'function') {
-            const parent = await fileHandle.getParent();
-            if (parent) {
-              const sub = await parent.getDirectoryHandle(savedName, { create: true });
-              const writeList = [
-                { name: `${savedName}.js`, content: artifacts.js },
-                { name: `${savedName}.py`, content: artifacts.py },
-                { name: `${savedName}.api.js`, content: artifacts.apiJs || artifacts.apiJs },
-                { name: `${savedName}.api.ps1`, content: artifacts.apiPs || artifacts.apiPs },
-                { name: `${savedName}.api.yaml`, content: artifacts.apiYaml || artifacts.apiYaml }
-              ];
-                if (artifacts.playwrightJs) writeList.push({ name: `${savedName}.playwright.js`, content: artifacts.playwrightJs });
-                if (artifacts.playwrightPy) writeList.push({ name: `${savedName}.playwright.py`, content: artifacts.playwrightPy });
-              for (const f of writeList) {
-                const fh = await sub.getFileHandle(f.name, { create: true });
-                const w = await fh.createWritable();
-                await w.write(f.content);
-                await w.close();
-              }
-              return;
-            }
-          }
-
-          // If getParent is not available, prompt the user to pick a directory to create the subfolder
-          if (window.showDirectoryPicker) {
-            try {
-              const dirHandle = await window.showDirectoryPicker();
-              const sub = await dirHandle.getDirectoryHandle(savedName, { create: true });
-              const writeList = [
-                { name: `${savedName}.js`, content: artifacts.js },
-                { name: `${savedName}.py`, content: artifacts.py },
-                { name: `${savedName}.api.js`, content: artifacts.apiJs || artifacts.apiJs },
-                { name: `${savedName}.api.ps1`, content: artifacts.apiPs || artifacts.apiPs },
-                { name: `${savedName}.api.yaml`, content: artifacts.apiYaml || artifacts.apiYaml }
-              ];
-                if (artifacts.playwrightJs) writeList.push({ name: `${savedName}.playwright.js`, content: artifacts.playwrightJs });
-                if (artifacts.playwrightPy) writeList.push({ name: `${savedName}.playwright.py`, content: artifacts.playwrightPy });
-              for (const f of writeList) {
-                const fh = await sub.getFileHandle(f.name, { create: true });
-                const w = await fh.createWritable();
-                await w.write(f.content);
-                await w.close();
-              }
-              return;
-            } catch (innerErr) {
-              // If user cancels the companion file pickers, silently continue to fallback below.
-            }
-          }
-        } catch (writeErr) {
-          // If writing companion files via FS Access API failed, fall back to downloads below.
-          console.error('Failed to write companion files to same directory:', writeErr);
-        }
-
-  // Fallback: download to default downloads folder (last resort)
-  showExportStatus('Saving to browser Downloads (fallback)', 4000);
-  downloadTextFile(`${savedName}.js`, artifacts.js, 'application/javascript;charset=utf-8');
-  downloadTextFile(`${savedName}.py`, artifacts.py, 'text/x-python;charset=utf-8');
-  downloadTextFile(`${savedName}.api.js`, artifacts.apiJs || '', 'application/javascript;charset=utf-8');
-  downloadTextFile(`${savedName}.api.ps1`, artifacts.apiPs || '', 'text/powershell;charset=utf-8');
-  downloadTextFile(`${savedName}.api.yaml`, artifacts.apiYaml || '', 'text/yaml;charset=utf-8');
-    if (artifacts.playwrightJs) downloadTextFile(`${savedName}.playwright.js`, artifacts.playwrightJs, 'application/javascript;charset=utf-8');
-    if (artifacts.playwrightPy) downloadTextFile(`${savedName}.playwright.py`, artifacts.playwrightPy, 'text/x-python;charset=utf-8');
-
-        // Silent success - no alert needed
-        return;
-      } catch (err) {
-        // User cancelled or error occurred
-        if (err.name !== 'AbortError') {
-          throw err; // Re-throw non-cancellation errors
-        }
-        return; // User cancelled - silent exit
-      }
-    }
-
-    // Fallback to downloads (no save picker available)
-  showExportStatus('Saving to browser Downloads (no file picker available)', 4000);
-  downloadTextFile(`${suggested}.yaml`, artifacts.yaml, 'text/yaml;charset=utf-8');
-  downloadTextFile(`${suggested}.js`, artifacts.js, 'application/javascript;charset=utf-8');
-  downloadTextFile(`${suggested}.py`, artifacts.py, 'text/x-python;charset=utf-8');
-    if (artifacts.playwrightJs) downloadTextFile(`${suggested}.playwright.js`, artifacts.playwrightJs, 'application/javascript;charset=utf-8');
-    if (artifacts.playwrightPy) downloadTextFile(`${suggested}.playwright.py`, artifacts.playwrightPy, 'text/x-python;charset=utf-8');
-    // Silent success for fallback too
-  }
-
-
-
-  async function exportSessionForEntry(entry) {
-    if (!entry.callHistory || entry.callHistory.length === 0) {
-      alert('No tool calls recorded for this server session yet.');
-      return;
-    }
-    const artifacts = await generateWorkflowArtifacts(entry);
-    await saveArtifactsViaDialog(artifacts);
-  }
-
-  async function generateCombinedWorkflowArtifacts(wf) {
-    // Combine all calls from all servers in the workflow
-    const calls = wf.calls || [];
-    if (calls.length === 0) {
-      throw new Error('No workflow calls to export');
-    }
-
-    // Group calls by server to generate multi-server workflow
-    const serverSpecs = new Map();
-    const steps = [];
-
-    function normalizeSpec(spec) {
-      try {
-        if (!spec || typeof spec !== 'object') return spec;
-        const out = JSON.parse(JSON.stringify(spec || {}));
-        // Determine mode if missing
-        if (!out.mode) {
-          if (out.command) out.mode = 'stdio';
-          else if (out.url) out.mode = 'http';
-        }
-        // Ensure args is an array for stdio-like specs
-        if (out.mode === 'stdio') {
-          if (!out.command && out.npmPackage && typeof out.npmPackage === 'string') {
-            // support a non-standard field pointing to an npm package
-            out.command = 'npx';
-            out.args = out.args || ['-y', out.npmPackage];
-          }
-          if (out.args && !Array.isArray(out.args)) {
-            if (typeof out.args === 'string') out.args = out.args.split(/\s+/).filter(Boolean);
-            else out.args = [out.args];
-          }
-          out.args = out.args || [];
-        }
-        // Ensure env is an object
-        if (out.env && typeof out.env !== 'object') {
-          out.env = {};
-        }
-        return out;
-      } catch (err) {
-        console.warn('normalizeSpec failed', err);
-        return spec;
-      }
-    }
-
-  async function findSpecForServer(name) {
-      try {
-        // Try to match the server entry by a few heuristics:
-        //  - exact serverName or name (case-sensitive)
-        //  - case-insensitive match of name/serverName/displayName
-        //  - displayName contains provided name (loose match)
-        const normalize = (v) => (v === null || v === undefined) ? '' : String(v).trim().toLowerCase();
-        const wanted = normalize(name);
-        let entry = servers.find((s) => (s.serverName === name || s.name === name));
-        if (!entry) {
-          entry = servers.find((s) => {
-            return normalize(s.serverName) === wanted || normalize(s.name) === wanted || normalize(s.displayName) === wanted;
-          });
-        }
-        if (!entry) {
-          entry = servers.find((s) => {
-            const dn = normalize(s.displayName);
-            return dn && wanted && dn.indexOf(wanted) !== -1;
-          });
-        }
-        if (!entry) return null;
-        if (!entry) return null;
-
-        // Prefer an explicit spec object on the entry
-        if (entry.spec && Object.keys(entry.spec).length) {
-          const s = normalizeSpec(entry.spec);
-          console.debug('[EXPORT] findSpecForServer — using entry.spec for', name, s);
-          return s;
-        }
-
-        // Try already-parsed configEntry (set during replaceConfigServers)
-        if (entry.configEntry && typeof entry.configEntry === 'object') {
-          // Possible shapes:
-          // { spec: { ... } }
-          if (entry.configEntry.spec && typeof entry.configEntry.spec === 'object') {
-            const s = normalizeSpec(entry.configEntry.spec);
-            console.debug('[EXPORT] findSpecForServer — using entry.configEntry.spec for', name, s);
-            return s;
-          }
-          // { mcpServers: { <name>: { ... } } }
-          if (entry.configEntry.mcpServers && entry.configEntry.mcpServers[name]) {
-            const s = normalizeSpec(entry.configEntry.mcpServers[name]);
-            console.debug('[EXPORT] findSpecForServer — using entry.configEntry.mcpServers for', name, s);
-            return s;
-          }
-          // direct server key
-          if (entry.configEntry[name]) {
-            const s = normalizeSpec(entry.configEntry[name]);
-            console.debug('[EXPORT] findSpecForServer — using entry.configEntry[name] for', name, s);
-            return s;
-          }
-        }
-
-        // Fallback: check configSnippets (raw text snippets provided by the hosted config UI)
-        const snippets = entry.configSnippets || {};
-        if (snippets.json) {
-          try {
-            const parsed = JSON.parse(snippets.json);
-            // Parsed may be a wrapper: { spec: {...} }
-            if (parsed && typeof parsed === 'object') {
-              if (parsed.spec && typeof parsed.spec === 'object') {
-                const s = normalizeSpec(parsed.spec);
-                console.debug('[EXPORT] findSpecForServer — using snippets.json.spec for', name, s);
-                return s;
-              }
-              if (parsed.mcpServers && parsed.mcpServers[name]) {
-                const s = normalizeSpec(parsed.mcpServers[name]);
-                console.debug('[EXPORT] findSpecForServer — using snippets.json.mcpServers for', name, s);
-                return s;
-              }
-              if (parsed[name]) {
-                const s = normalizeSpec(parsed[name]);
-                console.debug('[EXPORT] findSpecForServer — using snippets.json[name] for', name, s);
-                return s;
-              }
-              // In some cases the snippet itself is the server spec
-              if (parsed.mode || parsed.command || parsed.url || parsed.args) {
-                const s = normalizeSpec(parsed);
-                console.debug('[EXPORT] findSpecForServer — using snippets.json direct spec for', name, s);
-                return s;
-              }
-            }
-          } catch (err) {
-            console.warn('Failed to parse JSON config snippet for', name, err);
-          }
-        }
-
-        // Also consider entry.configSnippetValue which may contain the preferred-format snippet
-        if (entry.configSnippetValue) {
-          try {
-            const parsed = JSON.parse(entry.configSnippetValue);
-            if (parsed && typeof parsed === 'object') {
-              if (parsed.spec && typeof parsed.spec === 'object') {
-                const s = normalizeSpec(parsed.spec);
-                console.debug('[EXPORT] findSpecForServer — using configSnippetValue.spec for', name, s);
-                return s;
-              }
-              if (parsed.mcpServers && parsed.mcpServers[name]) {
-                const s = normalizeSpec(parsed.mcpServers[name]);
-                console.debug('[EXPORT] findSpecForServer — using configSnippetValue.mcpServers for', name, s);
-                return s;
-              }
-              if (parsed[name]) {
-                const s = normalizeSpec(parsed[name]);
-                console.debug('[EXPORT] findSpecForServer — using configSnippetValue[name] for', name, s);
-                return s;
-              }
-              if (parsed.mode || parsed.command || parsed.url || parsed.args) {
-                const s = normalizeSpec(parsed);
-                console.debug('[EXPORT] findSpecForServer — using configSnippetValue direct spec for', name, s);
-                return s;
-              }
-            }
-          } catch (err) {
-            // ignore parse errors
-          }
-        }
-
-        // If still nothing, try server-side parse of configSnippets or configSnippetValue
-        try {
-          const raw = (snippets.json || snippets.toml || entry.configSnippetValue || entry.configSnippet || '');
-          if (raw && String(raw).trim()) {
-            try {
-              const resp = await fetch('/api/export/parse-snippet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: raw }) });
-              const data = await resp.json().catch(() => ({}));
-              if (resp.ok && data && data.parsed) {
-                const parsed = data.parsed;
-                if (parsed && typeof parsed === 'object') {
-                  if (parsed.spec && typeof parsed.spec === 'object') {
-                    const s = normalizeSpec(parsed.spec);
-                    console.debug('[EXPORT] findSpecForServer — using parse-snippet.spec for', name, s);
-                    return s;
-                  }
-                  if (parsed.mcpServers && parsed.mcpServers[name]) {
-                    const s = normalizeSpec(parsed.mcpServers[name]);
-                    console.debug('[EXPORT] findSpecForServer — using parse-snippet.mcpServers for', name, s);
-                    return s;
-                  }
-                  if (parsed[name]) {
-                    const s = normalizeSpec(parsed[name]);
-                    console.debug('[EXPORT] findSpecForServer — using parse-snippet[name] for', name, s);
-                    return s;
-                  }
-                  if (parsed.mode || parsed.command || parsed.url || parsed.args) {
-                    const s = normalizeSpec(parsed);
-                    console.debug('[EXPORT] findSpecForServer — using parse-snippet direct spec for', name, s);
-                    return s;
-                  }
-                }
-              }
-            } catch (e) {
-              // ignore
-            }
-          }
-        } catch (_) {}
-
-        // As a last resort, check the global parsed config object (currentConfig)
-        try {
-          if (typeof currentConfig === 'object' && currentConfig) {
-            if (currentConfig.mcpServers && currentConfig.mcpServers[name]) {
-              const s = normalizeSpec(currentConfig.mcpServers[name]);
-              console.debug('[EXPORT] findSpecForServer — using currentConfig.mcpServers for', name, s);
-              return s;
-            }
-            if (Array.isArray(currentConfig.servers)) {
-              const found = currentConfig.servers.find(s => s.name === name || s.serverName === name);
-              if (found) {
-                const s = normalizeSpec(found);
-                console.debug('[EXPORT] findSpecForServer — using currentConfig.servers entry for', name, s);
-                return s;
-              }
-            }
-          }
-        } catch (_) {}
-
-        return null;
-      } catch (ex) {
-        console.error('findSpecForServer error for', name, ex);
-        return null;
-      }
-    }
-
-    for (const call of calls) {
-      const serverKey = call.serverName || 'unknown';
-      if (!serverSpecs.has(serverKey)) {
-        const found = (call.spec && Object.keys(call.spec).length) ? normalizeSpec(call.spec) : (await findSpecForServer(serverKey) || {});
-        serverSpecs.set(serverKey, found);
-      }
-
-      steps.push({
-        server: serverKey,
-        tool: call.toolName,
-        args: call.args || {},
-        keep_session_open: !!call.keepSessionOpen,
-        started_at: call.startedAt || null,
-        finished_at: call.finishedAt || null,
-        ok: !!call.success,
-        warmup: !!call.warmup
-      });
-    }
-
-    // Create pretty action descriptions
-    const prettySteps = steps.map((s) => {
-      const argPairs = Object.entries(s.args || {}).map(([k, v]) => {
-        let rendered;
-        if (typeof v === 'string') rendered = `'${v.replace(/'/g, "''")}'`;
-        else if (v === null || v === undefined) rendered = 'null';
-        else if (typeof v === 'boolean') rendered = v ? 'true' : 'false';
-        else if (typeof v === 'number' || typeof v === 'bigint') rendered = String(v);
-        else rendered = `'${String(v).replace(/'/g, "''")}'`;
-        return `${k}=${rendered}`;
-      });
-      return {
-        action: `call ${s.server} tool ${s.tool}${argPairs.length ? ' ' + argPairs.join(' ') : ''}`,
-        ...s
-      };
-    });
-
-    // Convert server specs map to array for YAML (do NOT shadow the global `servers` variable)
-    const exportServers = Array.from(serverSpecs.entries()).map(([name, spec]) => ({
-      name,
-      spec
-    }));
-
-    // Capture the UI server entries into a separate variable so we can look up raw snippets
-    const uiEntries = Array.isArray(servers) ? servers.slice() : [];
-
-    // Collect raw config snippets (as shown in UI) for each server and include them
-    const snippetParts = [];
-    for (const [name] of serverSpecs.entries()) {
-      const uiEntry = uiEntries.find(s => s.serverName === name || s.name === name || (s.displayName && String(s.displayName).indexOf(name) !== -1));
-      const raw = uiEntry && (uiEntry.configSnippetValue || uiEntry.configSnippet || (uiEntry.configSnippets && (uiEntry.configSnippets.json || uiEntry.configSnippets.toml))) || '';
-      if (raw && String(raw).trim()) {
-        snippetParts.push(`--- server: ${name} ---\n${raw}`);
-      }
-    }
-    const combinedRawSnippet = snippetParts.length ? snippetParts.join('\n\n') : '';
-    const snippetCommentYaml = combinedRawSnippet
-      ? ('# --- combined server config snippets (as shown in UI) ---\n' + combinedRawSnippet.split('\n').map(l => '# ' + l).join('\n') + '\n# --- end snippets ---\n\n')
-      : '';
-    const snippetCommentJs = combinedRawSnippet
-      ? ('/* --- combined server config snippets (as shown in UI) ---\n' + combinedRawSnippet + '\n--- end snippets --- */\n\n')
-      : '';
-    const snippetCommentPy = combinedRawSnippet
-      ? ('""" --- combined server config snippets (as shown in UI) ---\n' + combinedRawSnippet + '\n--- end snippets --- """\n\n')
-      : '';
-
-    // If a Playwright Codegen recording exists in the UI entries, include it as
-    // an executable step and prepare companion script artifacts.
-  let playwrightRecordingJsContent = '';
-  let playwrightRecordingPyContent = '';
-  const codegenEntry = uiEntries.find(e => e.isPlaywrightCodegen || (e.serverName && String(e.serverName).toLowerCase().indexOf('playwright') !== -1 && e.source === 'internal'));
-    // Ensure Playwright Codegen appears in the serverSpecs for exports even if
-    // no workflow calls referenced it. This makes the codegen server always
-    // available in export lists and enables inclusion of recorded scripts.
-    if (codegenEntry) {
-      const name = codegenEntry.serverName || codegenEntry.name || 'playwright-codegen';
-      if (!serverSpecs.has(name)) {
-        serverSpecs.set(name, { mode: 'codegen', url: codegenEntry.playwrightUrl || window.location.origin });
-      }
-    }
-    if (codegenEntry && codegenEntry.playwrightRecordingJs && String(codegenEntry.playwrightRecordingJs).trim()) {
-      // Prepend a step that indicates the recorded script should be executed
-      prettySteps.unshift({ action: 'execute_playwright_recording', server: codegenEntry.serverName || codegenEntry.displayName || 'playwright-codegen', tool: '__playwright_recording__', args: {} });
-      // Prepare a standalone Node script that runs the Playwright recording
-      const userJs = String(codegenEntry.playwrightRecordingJs || '').trim();
-      playwrightRecordingJsContent = `// Playwright recording for workflow\nconst { chromium } = require('playwright');\n(async () => {\n  const browser = await chromium.launch();\n  const page = await browser.newPage();\n  try {\n${userJs.split('\n').map(l => '    ' + l).join('\n')}\n  } finally {\n    await browser.close();\n  }\n})();\n`;
-      // Minimal Python recording wrapper (if user provided a Python snippet, prefer it)
-      const userPy = String(codegenEntry.playwrightRecordingPy || '').trim();
-      if (userPy) {
-        playwrightRecordingPyContent = `# Playwright recording (Python)\nfrom playwright.async_api import async_playwright\nimport asyncio\n\nasync def execute_playwright_recording():\n${userPy.split('\n').map(l => '    ' + l).join('\n')}\n\nif __name__ == '__main__':\n    asyncio.run(execute_playwright_recording())\n`;
-      } else {
-        // If no Python provided, create a small shim that calls node script via subprocess
-        playwrightRecordingPyContent = `# Playwright recording shim (calls Node script)\nimport subprocess\nimport sys\nsubprocess.check_call(['node', __file__.replace('.py', '.playwright.js')])\n`;
-      }
-    }
-
-    const workflow = {
-      version: 1,
-      exported_at: new Date().toISOString(),
-      servers,
-      steps: prettySteps
-    };
-
-  const yaml = `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` + snippetCommentYaml + toSingleQuotedYAML(workflow) + '\n';
-    const baseName = `MCP_Workflow_${formatTimestampForFilename(new Date())}`;
-
-    // Generate JavaScript replay script
-    const js = snippetCommentJs + `/* Generated by MCP Diagnosis Tool: Multi-server workflow replay (v ${APP_VERSION}) */\n` +
-  `// Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` +
-  `// Requires: npm i @modelcontextprotocol/sdk\n` +
-  `const { Client } = require('@modelcontextprotocol/sdk/client/index.js');\n` +
-  `const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');\n` +
-  `const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');\n` +
-  `const { SSEClientTransport } = require('@modelcontextprotocol/sdk/client/sse.js');\n` +
-  `\n` +
-  `const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
-  `const steps = ${JSON.stringify(steps, null, 2)};\n` +
-  `\n` +
-  `const clients = new Map();\n` +
-  `\n` +
-  `function toJsonable(x){\n` +
-  `  if (x == null) return x;\n` +
-  `  const t = typeof x;\n` +
-  `  if (t === 'string' || t === 'number' || t === 'boolean') return x;\n` +
-  `  if (Array.isArray(x)) return x.map(toJsonable);\n` +
-  `  if (t === 'object') {\n` +
-  `    if (x.type && (x.text !== undefined || x.data !== undefined || x.mimeType !== undefined || x.name !== undefined || x.error !== undefined || x.url !== undefined || x.path !== undefined)) {\n` +
-  `      const out = { type: x.type };\n` +
-  `      for (const k of ['text','data','mimeType','name','error','url','path']) { if (Object.prototype.hasOwnProperty.call(x, k)) out[k] = toJsonable(x[k]); }\n` +
-  `      return out;\n` +
-  `    }\n` +
-  `    const out = {}; for (const [k, v] of Object.entries(x)) out[k] = toJsonable(v); return out;\n` +
-  `  }\n` +
-  `  return String(x);\n` +
-  `}\n` +
-  `\n` +
-  `async function getClient(serverName) {\n` +
-  `  if (clients.has(serverName)) return clients.get(serverName);\n` +
-  `  const serverDef = servers.find(s => s.name === serverName);\n` +
-  `  if (!serverDef) throw new Error('Unknown server: ' + serverName);\n` +
-  `  const spec = serverDef.spec;\n` +
-  `  const client = new Client({ name: 'mcp-workflow-replay', version: '1.0.0' });\n` +
-  `  if (spec.mode === 'stdio') {\n` +
-  `    const transport = new StdioClientTransport({\n` +
-  `      command: spec.command,\n` +
-  `      args: spec.args || [],\n` +
-  `      env: spec.env || {},\n` +
-  `      cwd: spec.cwd,\n` +
-  `      stderr: spec.stderr\n` +
-  `    });\n` +
-  `    await client.connect(transport);\n` +
-  `  } else if (spec.mode === 'http') {\n` +
-  `    const url = new URL(spec.url);\n` +
-  `    try {\n` +
-  `      const http = new StreamableHTTPClientTransport(url);\n` +
-  `      await client.connect(http);\n` +
-  `    } catch (_) {\n` +
-  `      const sse = new SSEClientTransport(url);\n` +
-  `      await client.connect(sse);\n` +
-  `    }\n` +
-  `  } else {\n` +
-  `    throw new Error('Unknown spec.mode: ' + spec.mode);\n` +
-  `  }\n` +
-  `  clients.set(serverName, client);\n` +
-  `  return client;\n` +
-  `}\n` +
-  `\n` +
-  `async function closeClient(serverName) {\n` +
-  `  const client = clients.get(serverName);\n` +
-  `  if (client) {\n` +
-  `    try { await client.close(); } catch {}\n` +
-  `    clients.delete(serverName);\n` +
-  `  }\n` +
-  `}\n` +
-  `\n` +
-  `async function closeAllClients() {\n` +
-  `  for (const [name] of clients) {\n` +
-  `    await closeClient(name);\n` +
-  `  }\n` +
-  `}\n` +
-  `\n` +
-  `async function run() {\n` +
-  `  try {\n` +
-  `    for (const s of steps) {\n` +
-  `      const client = await getClient(s.server);\n` +
-  `      const result = await client.callTool({ name: s.tool, arguments: s.args || {} });\n` +
-  `      const payload = (result && (result.content ?? result)) ?? null;\n` +
-  `      console.log('[' + s.server + '] tool', s.tool, '->\\n' + JSON.stringify(toJsonable(payload), null, 2));\n` +
-  `      if (!s.keep_session_open) {\n` +
-  `        await closeClient(s.server);\n` +
-  `      }\n` +
-  `    }\n` +
-  `  } finally {\n` +
-  `    await closeAllClients();\n` +
-  `  }\n` +
-  `}\n` +
-  `\n` +
-  `run().catch(err => { console.error('Run failed:', err); process.exit(1); });\n`;
-
-    // Generate Python replay script
-    const py = `# Generated by MCP Diagnosis Tool: Multi-server workflow replay (v ${APP_VERSION})\n` +
-  `# Exported with MCP Diagnosis Tool v ${APP_VERSION}\n` +
   `# Requires: pip install mcp\n` +
   `import asyncio, json\n` +
   `from contextlib import AsyncExitStack\n` +
@@ -3131,11 +2226,13 @@
     const apiJsCombined = snippetCommentJs + `// API replay script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
       `// Usage: node ${baseName}.api.js http://localhost:3060\n` +
       `const fetch = require('node-fetch');\n` +
+      `const fs = require('fs');\n` +
       `(async function(){\n` +
       `  const base = process.argv[2] || 'http://localhost:3060';\n` +
       `  const servers = ${JSON.stringify(exportServers, null, 2)};\n` +
       `  const steps = ${JSON.stringify(prettySteps, null, 2)};\n` +
       `  const sessions = {};\n` +
+      `  const __MCP_export_results__ = [];\n` +
       `  for (const s of servers) {\n` +
       `    const resp = await fetch(base + '/api/sessions/open', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ spec: s.spec }) });\n` +
       `    const j = await resp.json(); if (!j.sessionId) { console.error('Failed to open session for', s.name, j); process.exit(2); }\n` +
@@ -3146,80 +2243,24 @@
       `    console.log('Calling', step.tool, 'on', step.server);\n` +
       `    const call = await fetch(base + '/api/tools/call', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid, tool: step.tool, args: step.args || {} }) });\n` +
       `    const out = await call.json().catch(() => null); console.log('Result', out);\n` +
+      `    __MCP_export_results__.push({ server: step.server, tool: step.tool, ok: !!(out && out.ok !== false), args: step.args || {}, result: out });\n` +
       `  }\n` +
       `  for (const [name, sid] of Object.entries(sessions)) {\n` +
       `    await fetch(base + '/api/sessions/close', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ sessionId: sid }) });\n` +
       `    console.log('Closed', name);\n` +
       `  }\n` +
-      `})();\n`;
-
-    const apiPsCombined = snippetCommentPy + `# API replay PowerShell script for MCP Diagnosis Tool v ${APP_VERSION}\n` +
-      `# Usage: powershell -File ${baseName}.api.ps -BaseUrl http://localhost:3060\n` +
-      `$BaseUrl = $args[0]; if (-not $BaseUrl) { $BaseUrl = 'http://localhost:3060' }\n` +
-      `$servers = ${JSON.stringify(exportServers, null, 2)}\n` +
-      `foreach ($s in $servers) {\n` +
-      `  Write-Host "Opening session for $($s.name) via $BaseUrl"\n` +
-      `  $resp = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/open') -ContentType 'application/json' -Body (ConvertTo-Json @{ spec = $s.spec } -Depth 10)\n` +
-      `  if (-not $resp.sessionId) { Write-Error "Failed to open session for $($s.name): $($resp | ConvertTo-Json -Depth 5)" ; exit 2 }\n` +
-      `  $sessions[$s.name] = $resp.sessionId\n` +
-      `}\n` +
-      `# Example call loop (adjust as needed)\n` +
-      `foreach ($step in ${JSON.stringify(prettySteps, null, 2)}) {\n` +
-      `  $sid = $sessions[$step.server]; if (-not $sid) { Write-Host "No session for $($step.server)"; continue }\n` +
-      `  Write-Host "Calling $($step.tool) on $($step.server)"\n` +
-      `  $call = Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/tools/call') -ContentType 'application/json' -Body (ConvertTo-Json @{ sessionId = $sid; tool = $step.tool; args = $step.args } -Depth 10)\n` +
-      `  Write-Host "Result: $($call | ConvertTo-Json -Depth 5)"\n` +
-      `}\n` +
-      `# Close sessions\n` +
-      `foreach ($name in $sessions.Keys) {\n` +
-      `  Invoke-RestMethod -Method Post -Uri ($BaseUrl + '/api/sessions/close') -ContentType 'application/json' -Body (ConvertTo-Json @{ sessionId = $sessions[$name] } -Depth 5)\n` +
-      `  Write-Host "Closed $name"\n` +
-      `}\n`;
-
-    return { yaml, js, py, apiYaml: apiYamlCombined, apiJs: apiJsCombined, apiPs: apiPsCombined, baseName, playwrightJs: playwrightRecordingJsContent, playwrightPy: playwrightRecordingPyContent };
-  }
-
-
-  function applyLastArgs(context) {
-    const lastArgs = context.lastArgs ?? {};
-    if (context.argSpecs.length) {
-      context.argSpecs.forEach((spec) => {
-        const field = document.getElementById(spec.inputId);
-        if (!field) return;
-        const value = lastArgs[spec.name];
-        if (value === undefined) return;
-
-        const type = spec.schema?.type;
-        if (spec.enum && spec.enum.length) {
-          const idx = spec.enum.findIndex((item) => Object.is(item, value));
-          field.value = idx >= 0 ? String(idx) : '';
-        } else if (type === 'boolean') {
-          field.value = value === true ? 'true' : value === false ? 'false' : '';
-        } else if (type === 'number' || type === 'integer') {
-          field.value = value;
-        } else if (type === 'array' || type === 'object' || typeof value === 'object') {
-          field.value = stringifyValue(value);
-        } else {
-          field.value = value;
-        }
-      });
-    } else {
-      const textArea = document.getElementById('tool-args-json');
-      if (textArea) {
-        textArea.value = Object.keys(lastArgs).length ? stringifyValue(lastArgs) : '';
-      }
-    }
-  }
-
-  function renderArgumentFields(context) {
-    const container = document.getElementById('tool-modal-form');
-    if (!container) return;
-    if (context.argSpecs.length) {
-      let html = '<p class="modal-note">Provide arguments below. Leave optional fields empty to omit them.</p>';
-      context.argSpecs.forEach((spec) => {
-        const label = escapeHtml(spec.name);
+      `  try {\n` +
+      `    if (typeof process !== 'undefined' && process.versions && process.versions.node) {\n` +
+      `      const out = { exported_at: new Date().toISOString(), servers: servers, steps: __MCP_export_results__ };\n` +
+      `      fs.writeFileSync('${baseName}.exported.json', JSON.stringify(out, null, 2));\n` +
+      `      console.log('Wrote ${baseName}.exported.json');\n` +
+      `      if (__MCP_export_results__.length) console.log(JSON.stringify(__MCP_export_results__[__MCP_export_results__.length-1].result, null, 2));\n` +
+      `    }\n` +
+      `  } catch (e) { console.error('Failed to write export JSON', e); }\n` +
+      `})();\n` +
+      `\n`;
         const description = spec.description ? `<p class="modal-note">${escapeHtml(spec.description)}</p>` : '';
-        html += `<div class="modal-field"><label class="modal-label" for="${spec.inputId}">${label}`;
+    html += `<div class="modal-field"><label class="modal-label" for="${spec.inputId}">${label}`;
         if (spec.required) {
           html += '<span class="required">*</span>';
         }
@@ -3456,7 +2497,6 @@
         if (!t) return false;
         const sch = t.inputSchema;
         if (!sch || typeof sch !== 'object') return true; // no schema means no required args
-        if (sch.type && sch.type !== 'object') return true; // non-object schema -> treat as no required
         const req = Array.isArray(sch.required) ? sch.required : [];
         return req.length === 0;
       });
@@ -3492,6 +2532,10 @@
         entry.activeSessionId = data.sessionId;
         entry.sessionReused = !!data.sessionReused;
         entry.sessionCreatedAt = data.sessionCreatedAt || new Date().toISOString();
+      } else {
+        entry.activeSessionId = null;
+        entry.sessionReused = false;
+        entry.sessionCreatedAt = null;
       }
       // Clear hidden markers and update UI
       entry.sessionHidden = false;
